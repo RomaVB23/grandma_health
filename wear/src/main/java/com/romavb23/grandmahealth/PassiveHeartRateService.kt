@@ -16,6 +16,8 @@ class PassiveHeartRateService : PassiveListenerService() {
                 .maxByOrNull { it.timeDurationFromBoot }
                 ?: return
 
+        if (!latestHeartRate.value.isFinite()) return
+
         val bootInstant =
             Instant.ofEpochMilli(System.currentTimeMillis() - SystemClock.elapsedRealtime())
         val measuredAt = latestHeartRate.getTimeInstant(bootInstant).toEpochMilli()

@@ -2,6 +2,9 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
     <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_HEALTH" />
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!-- Wear OS 5 and older. -->
     <uses-permission
         android:name="android.permission.BODY_SENSORS"
@@ -47,6 +50,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".MonitoringForegroundService"
+            android:exported="false"
+            android:foregroundServiceType="health" />
 
         <service
             android:name=".PassiveHeartRateService"

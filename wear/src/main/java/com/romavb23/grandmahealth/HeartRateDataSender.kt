@@ -4,6 +4,7 @@ import android.content.Context
 import android.os.BatteryManager
 import android.util.Log
 import com.google.android.gms.wearable.PutDataMapRequest
+import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.Wearable
 
 internal fun sendHeartRateToPhone(
@@ -11,6 +12,7 @@ internal fun sendHeartRateToPhone(
     bpm: Int,
     measuredAt: Long,
 ) {
+    if (!WatchStateStore.saveHeartRate(context, bpm, measuredAt)) return
     val batteryManager = context.getSystemService(BatteryManager::class.java)
     val batteryPercent =
         batteryManager
@@ -23,6 +25,7 @@ internal fun sendHeartRateToPhone(
         PutDataMapRequest.create(HEART_RATE_PATH).run {
             dataMap.putInt(HEART_RATE_KEY_BPM, bpm)
             dataMap.putLong(HEART_RATE_KEY_MEASURED_AT, measuredAt)
+            dataMap.putLong("sent_at", System.currentTimeMillis())
             dataMap.putInt(HEART_RATE_KEY_BATTERY_PERCENT, batteryPercent)
             dataMap.putBoolean(HEART_RATE_KEY_CHARGING, charging)
             asPutDataRequest().setUrgent()
@@ -32,6 +35,35 @@ internal fun sendHeartRateToPhone(
         .putDataItem(request)
         .addOnFailureListener { error ->
             Log.e(HEART_RATE_LOG_TAG, "Не удалось передать пульс на телефон", error)
+        }
+}
+
+/** MessageClient doesn't queue offline packets: reception means a live exchange. */
+internal fun sendWatchHeartbeat(context: Context) {
+    val app = context.applicationContext
+    val battery = app.getSystemService(BatteryManager::class.java)
+    val (bpm, measuredAt) = WatchStateStore.heartRate(app)
+    val message = DataMap().apply {
+        putLong("sent_at", System.currentTimeMillis())
+        putInt("bpm", bpm)
+        putLong("measured_at", measuredAt)
+        putInt("battery_percent", battery?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            ?.takeIf { it in 0..100 } ?: -1)
+        putBoolean("charging", battery?.isCharging == true)
+        putString("monitoring_status", WatchStateStore.status(app))
+    }.toByteArray()
+    Wearable.getNodeClient(app).connectedNodes
+        .addOnSuccessListener { nodes ->
+            if (nodes.isEmpty()) Log.w(HEART_RATE_LOG_TAG, "Телефон не подключён; heartbeat не отправлен")
+            nodes.forEach { node ->
+                Wearable.getMessageClient(app).sendMessage(node.id, "/watch/heartbeat", message)
+                    .addOnFailureListener { error ->
+                        Log.w(HEART_RATE_LOG_TAG, "Не удалось передать heartbeat", error)
+                    }
+            }
+        }
+        .addOnFailureListener { error ->
+            Log.w(HEART_RATE_LOG_TAG, "Не удалось получить подключённые устройства", error)
         }
 }
 

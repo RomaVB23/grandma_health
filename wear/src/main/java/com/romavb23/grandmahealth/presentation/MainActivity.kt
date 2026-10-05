@@ -2,6 +2,8 @@ package com.romavb23.grandmahealth.presentation
 
 import android.Manifest
 import android.content.Context
+import android.content.SharedPreferences
+import android.os.SystemClock
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
@@ -10,11 +12,14 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -25,6 +30,8 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
 import androidx.health.services.client.HealthServices
 import androidx.health.services.client.MeasureCallback
 import androidx.health.services.client.data.Availability
@@ -32,7 +39,6 @@ import androidx.health.services.client.data.DataPointContainer
 import androidx.health.services.client.data.DataType
 import androidx.health.services.client.data.DataTypeAvailability
 import androidx.health.services.client.data.DeltaDataType
-import androidx.health.services.client.data.PassiveListenerConfig
 import androidx.wear.compose.material3.AppScaffold
 import androidx.wear.compose.material3.Button
 import androidx.wear.compose.material3.MaterialTheme
@@ -40,7 +46,9 @@ import androidx.wear.compose.material3.ScreenScaffold
 import androidx.wear.compose.material3.Text
 import androidx.wear.compose.ui.tooling.preview.WearPreviewDevices
 import androidx.wear.compose.ui.tooling.preview.WearPreviewFontScales
-import com.romavb23.grandmahealth.PassiveHeartRateService
+import com.romavb23.grandmahealth.MonitoringForegroundService
+import com.romavb23.grandmahealth.WatchStateStore
+import java.time.Instant
 import com.romavb23.grandmahealth.sendHeartRateToPhone
 import com.romavb23.grandmahealth.presentation.theme.GrandmaHealthTheme
 import kotlin.math.roundToInt
@@ -71,6 +79,43 @@ private fun HeartRateApp() {
         mutableStateOf(hasBackgroundHeartRatePermission(context))
     }
 
+    var monitoringEnabled by remember { mutableStateOf(WatchStateStore.isEnabled(context)) }
+    // Background sensor permission may be granted on a separate system settings screen.
+    DisposableEffect(context) {
+        val lifecycle = (context as? ComponentActivity)?.lifecycle
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                permissionGranted = hasHeartRatePermission(context)
+                backgroundPermissionGranted = hasBackgroundHeartRatePermission(context)
+                monitoringEnabled = WatchStateStore.isEnabled(context)
+                backgroundStatus = monitoringStatusText(WatchStateStore.status(context))
+            }
+        }
+        lifecycle?.addObserver(observer)
+        onDispose { lifecycle?.removeObserver(observer) }
+    }
+    val monitoringPreferences = remember(context) { WatchStateStore.preferences(context) }
+    val notificationLauncher =
+        rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { }
+
+    DisposableEffect(monitoringPreferences) {
+        val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
+            monitoringEnabled = WatchStateStore.isEnabled(context)
+            backgroundStatus = monitoringStatusText(WatchStateStore.status(context))
+        }
+        monitoringPreferences.registerOnSharedPreferenceChangeListener(listener)
+        onDispose { monitoringPreferences.unregisterOnSharedPreferenceChangeListener(listener) }
+    }
+
+    LaunchedEffect(backgroundPermissionGranted) {
+        if (backgroundPermissionGranted && Build.VERSION.SDK_INT >= 33 &&
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) !=
+            PackageManager.PERMISSION_GRANTED
+        ) {
+            notificationLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     val backgroundPermissionLauncher =
         rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             backgroundPermissionGranted = granted
@@ -96,10 +141,9 @@ private fun HeartRateApp() {
             var lastSentAt = 0L
             val callback =
                 createHeartRateCallback(
-                    onBpm = { measuredBpm ->
+                    onBpm = { measuredBpm, measuredAt ->
                         bpm = measuredBpm
 
-                        val measuredAt = System.currentTimeMillis()
                         if (measuredAt - lastSentAt >= HEART_RATE_SEND_INTERVAL_MS) {
                             lastSentAt = measuredAt
                             sendHeartRateToPhone(
@@ -129,11 +173,13 @@ private fun HeartRateApp() {
         onDispose { }
     }
 
-    DisposableEffect(backgroundPermissionGranted) {
-        if (backgroundPermissionGranted) {
+    DisposableEffect(permissionGranted, backgroundPermissionGranted, monitoringEnabled) {
+        if (permissionGranted && backgroundPermissionGranted && monitoringEnabled) {
             registerPassiveHeartRateMonitoring(context) { message ->
                 backgroundStatus = message
             }
+        } else if (!monitoringEnabled) {
+            backgroundStatus = monitoringStatusText(WatchStateStore.status(context))
         }
         onDispose { }
     }
@@ -148,6 +194,15 @@ private fun HeartRateApp() {
         requestBackgroundPermission = {
             backgroundHeartRatePermission()?.let(backgroundPermissionLauncher::launch)
         },
+        monitoringEnabled = monitoringEnabled,
+        toggleMonitoring = {
+            if (monitoringEnabled) {
+                MonitoringForegroundService.stop(context)
+            } else {
+                monitoringEnabled = true
+                WatchStateStore.setEnabled(context, true)
+            }
+        },
     )
 }
 
@@ -160,6 +215,8 @@ private fun HeartRateScreen(
     backgroundPermissionGranted: Boolean,
     requestPermission: () -> Unit,
     requestBackgroundPermission: () -> Unit,
+    monitoringEnabled: Boolean,
+    toggleMonitoring: () -> Unit,
 ) {
     GrandmaHealthTheme {
         AppScaffold {
@@ -168,6 +225,7 @@ private fun HeartRateScreen(
                     modifier =
                         Modifier
                             .fillMaxSize()
+                            .verticalScroll(rememberScrollState())
                             .padding(contentPadding)
                             .padding(horizontal = 18.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -207,6 +265,13 @@ private fun HeartRateScreen(
                         ) {
                             Text("Разрешить фон")
                         }
+                    } else {
+                        Button(
+                            onClick = toggleMonitoring,
+                            modifier = Modifier.padding(top = 12.dp),
+                        ) {
+                            Text(if (monitoringEnabled) "Остановить фон" else "Включить фон")
+                        }
                     }
                 }
             }
@@ -215,7 +280,7 @@ private fun HeartRateScreen(
 }
 
 private fun createHeartRateCallback(
-    onBpm: (Int) -> Unit,
+    onBpm: (Int, Long) -> Unit,
     onStatus: (String) -> Unit,
 ): MeasureCallback =
     object : MeasureCallback {
@@ -243,11 +308,17 @@ private fun createHeartRateCallback(
         }
 
         override fun onDataReceived(data: DataPointContainer) {
-            val latestHeartRate = data.getData(DataType.HEART_RATE_BPM).lastOrNull()?.value
-            if (latestHeartRate != null) {
-                onBpm(latestHeartRate.roundToInt())
-                onStatus("Датчик активен")
-            }
+            val latestHeartRate = data.getData(DataType.HEART_RATE_BPM)
+                .maxByOrNull { it.timeDurationFromBoot } ?: return
+            if (!latestHeartRate.value.isFinite()) return
+            val bootInstant = Instant.ofEpochMilli(
+                System.currentTimeMillis() - SystemClock.elapsedRealtime(),
+            )
+            onBpm(
+                latestHeartRate.value.roundToInt(),
+                latestHeartRate.getTimeInstant(bootInstant).toEpochMilli(),
+            )
+            onStatus("Датчик активен")
         }
     }
 
@@ -279,46 +350,23 @@ private fun registerPassiveHeartRateMonitoring(
     context: Context,
     onStatus: (String) -> Unit,
 ) {
-    val passiveClient = HealthServices.getClient(context).passiveMonitoringClient
-    val executor = ContextCompat.getMainExecutor(context)
-    val capabilitiesFuture = passiveClient.getCapabilitiesAsync()
+    try {
+        MonitoringForegroundService.start(context)
+        onStatus("Запускаем фон…")
+    } catch (error: Exception) {
+        WatchStateStore.setEnabled(context, false)
+        WatchStateStore.setStatus(context, "error")
+        onStatus("Ошибка запуска фона")
+    }
+}
 
-    capabilitiesFuture.addListener(
-        {
-            try {
-                val capabilities = capabilitiesFuture.get()
-                if (DataType.HEART_RATE_BPM !in capabilities.supportedDataTypesPassiveMonitoring) {
-                    onStatus("Фоновый пульс не поддерживается")
-                    return@addListener
-                }
-
-                val config =
-                    PassiveListenerConfig.builder()
-                        .setDataTypes(setOf(DataType.HEART_RATE_BPM))
-                        .build()
-                val registrationFuture =
-                    passiveClient.setPassiveListenerServiceAsync(
-                        PassiveHeartRateService::class.java,
-                        config,
-                    )
-
-                registrationFuture.addListener(
-                    {
-                        try {
-                            registrationFuture.get()
-                            onStatus("Фоновый мониторинг включён")
-                        } catch (error: Exception) {
-                            onStatus("Ошибка фонового режима")
-                        }
-                    },
-                    executor,
-                )
-            } catch (error: Exception) {
-                onStatus("Не удалось проверить фоновый режим")
-            }
-        },
-        executor,
-    )
+private fun monitoringStatusText(status: String): String = when (status) {
+    "active" -> "Пульс в фоне · связь ≈ 3 мин"
+    "starting" -> "Запускаем фон…"
+    "permission_lost" -> "Нет разрешения на пульс в фоне"
+    "unsupported" -> "Фоновый пульс не поддерживается"
+    "error" -> "Ошибка фонового мониторинга"
+    else -> "Фон выключен"
 }
 
 private const val READ_HEART_RATE_PERMISSION = "android.permission.health.READ_HEART_RATE"
@@ -338,5 +386,7 @@ private fun DefaultPreview() {
         backgroundPermissionGranted = true,
         requestPermission = {},
         requestBackgroundPermission = {},
+        monitoringEnabled = true,
+        toggleMonitoring = {},
     )
 }
