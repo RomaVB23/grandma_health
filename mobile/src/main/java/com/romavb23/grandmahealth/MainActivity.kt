@@ -55,7 +55,12 @@ private fun HeartRateScreen(modifier: Modifier = Modifier) {
     DisposableEffect(preferences) {
         val listener =
             SharedPreferences.OnSharedPreferenceChangeListener { _, key ->
-                if (key == HEART_RATE_KEY_BPM || key == HEART_RATE_KEY_MEASURED_AT) {
+                if (
+                    key == HEART_RATE_KEY_BPM ||
+                    key == HEART_RATE_KEY_MEASURED_AT ||
+                    key == HEART_RATE_KEY_BATTERY_PERCENT ||
+                    key == HEART_RATE_KEY_CHARGING
+                ) {
                     reading = preferences.readHeartRate()
                 }
             }
@@ -110,6 +115,16 @@ private fun HeartRateContent(
             modifier = Modifier.padding(top = 24.dp),
             style = MaterialTheme.typography.bodyLarge,
         )
+        Text(
+            text =
+                if (reading?.batteryPercent != null && reading.batteryPercent in 0..100) {
+                    "Заряд часов: ${reading.batteryPercent}%${if (reading.charging) " · заряжаются" else ""}"
+                } else {
+                    "Заряд часов: ожидаем данные"
+                },
+            modifier = Modifier.padding(top = 8.dp),
+            style = MaterialTheme.typography.bodyLarge,
+        )
     }
 }
 
@@ -118,7 +133,13 @@ private fun HeartRateContent(
 private fun HeartRatePreview() {
     GrandmaHealthTheme {
         HeartRateContent(
-            reading = HeartRateReading(bpm = 72, measuredAt = System.currentTimeMillis()),
+            reading =
+                HeartRateReading(
+                    bpm = 72,
+                    measuredAt = System.currentTimeMillis(),
+                    batteryPercent = 83,
+                    charging = false,
+                ),
         )
     }
 }
@@ -126,18 +147,27 @@ private fun HeartRatePreview() {
 private fun SharedPreferences.readHeartRate(): HeartRateReading? {
     val bpm = getInt(HEART_RATE_KEY_BPM, -1)
     val measuredAt = getLong(HEART_RATE_KEY_MEASURED_AT, 0L)
+    val batteryPercent = getInt(HEART_RATE_KEY_BATTERY_PERCENT, -1)
+    val charging = getBoolean(HEART_RATE_KEY_CHARGING, false)
 
     return if (bpm > 0 && measuredAt > 0L) {
-        HeartRateReading(bpm = bpm, measuredAt = measuredAt)
+        HeartRateReading(
+            bpm = bpm,
+            measuredAt = measuredAt,
+            batteryPercent = batteryPercent,
+            charging = charging,
+        )
     } else {
         null
     }
 }
 
 private fun formatTime(timestamp: Long): String =
-    SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale("ru", "RU")).format(Date(timestamp))
+    SimpleDateFormat("dd.MM.yyyy HH:mm:ss", Locale.forLanguageTag("ru-RU")).format(Date(timestamp))
 
 private data class HeartRateReading(
     val bpm: Int,
     val measuredAt: Long,
+    val batteryPercent: Int,
+    val charging: Boolean,
 )
