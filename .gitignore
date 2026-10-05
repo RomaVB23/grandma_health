@@ -13,3 +13,6 @@
 .externalNativeBuild
 .cxx
 local.properties
+# Локальные файлы
+/README.md
+/.idea/
