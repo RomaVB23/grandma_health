@@ -11,6 +11,11 @@ return Application::configure(basePath: dirname(__DIR__))
         api: __DIR__.'/../routes/api.php',
         health: '/up',
     )
+    ->withCommands([
+        App\Console\Commands\TelegramRun::class,
+        App\Console\Commands\TelegramIdentify::class,
+        App\Console\Commands\TelegramHealth::class,
+    ])
     ->withMiddleware(function (Middleware $middleware): void {
         $middleware->alias(['telemetry.token' => RequireTelemetryToken::class]);
     })

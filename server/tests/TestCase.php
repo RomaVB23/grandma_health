@@ -17,6 +17,7 @@ abstract class TestCase extends BaseTestCase
             'DB_DATABASE' => ':memory:',
             'CACHE_STORE' => 'array',
             'SESSION_DRIVER' => 'array',
+            'LOG_CHANNEL' => 'null', // Expected failure-path tests should not print production-style logs.
         ] as $key => $value) {
             putenv($key.'='.$value);
             $_ENV[$key] = $value;
