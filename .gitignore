@@ -16,3 +16,11 @@ local.properties
 # Локальные файлы
 /README.md
 /.idea/
+
+# Сервер: зависимости, секреты и локальные данные
+/server/vendor/
+/server/.env
+/server/data/
+/server/.phpunit.cache/
+/server/storage/
+/server/bootstrap/cache/*.php

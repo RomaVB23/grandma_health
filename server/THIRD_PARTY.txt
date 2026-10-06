@@ -1,0 +1,4 @@
+Laravel application bootstrap and configuration files are adapted from
+laravel/laravel commit 06d016a364a37430eec9cbc52209adce3d7667ce (13.x).
+Laravel is released under the MIT license.
+Framework license: https://github.com/laravel/framework/blob/13.x/LICENSE.md

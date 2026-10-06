@@ -1,0 +1,6 @@
+.env
+data
+vendor
+.phpunit.cache
+storage
+bootstrap/cache/*.php
