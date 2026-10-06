@@ -3,16 +3,18 @@
 namespace App\Services\Telegram;
 
 use App\Services\WatchStatus;
+use App\Services\TelemetryEpoch;
 use Illuminate\Support\Facades\DB;
 
 class TechnicalAlerts
 {
-    public function __construct(private BotStore $store, private WatchStatus $status) {}
+    public function __construct(private BotStore $store, private WatchStatus $status, private TelemetryEpoch $epochs) {}
 
     public function tick(): void
     {
-        $s = $this->status->snapshot();
-        DB::transaction(function () use ($s): void {
+        DB::transaction(function (): void {
+            $this->epochs->lock(config('telemetry.device_id'));
+            $s = $this->status->snapshot();
             $now = BotStore::now();
             if ($this->store->value('alerts_started_at') === '') {
                 $this->store->put('alerts_started_at', (string) $now);
@@ -35,7 +37,7 @@ class TechnicalAlerts
                     '🔋 Низкий заряд часов: '.$s['battery_percent'].'%. Поставьте часы на зарядку.',
                     '✅ Часы заряжаются или заряд восстановился до 25% и выше.');
             }
-        });
+        }, 5);
     }
 
     private function update(string $kind, bool $active, string $problem, string $recovery): void
