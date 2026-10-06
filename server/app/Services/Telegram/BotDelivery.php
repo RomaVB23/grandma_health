@@ -24,6 +24,17 @@ class BotDelivery
                 $allowed = $allowed && $member?->alerts_allowed && $member?->notifications_enabled
                     && $alert && (bool) $alert->active === (bool) $message->alert_active
                     && $alert->generation === $message->alert_generation;
+                if ($allowed && in_array($message->alert_kind, ['pulse', 'wearing'], true)) {
+                    $s = $this->status->snapshot();
+                    $rules = app(\App\Services\MonitoringSettings::class)->get();
+                    if ($message->alert_kind === 'pulse') {
+                        $allowed = ($s['pulse_eligible'] ?? false)
+                            && \App\Services\MonitoringEligibility::outside($s['bpm'], $rules) === (bool) $message->alert_active;
+                    } else {
+                        $allowed = $rules->wearing_enabled && $s['contact_recent'] && $s['monitoring_status'] === 'active'
+                            && ($s['wearing_state'] ?? 'unknown') === ($message->alert_active ? 'off' : 'on');
+                    }
+                }
             }
             if (!$allowed) {
                 DB::table('telegram_outbox')->where('id', $message->id)->update(['state' => 'cancelled']);

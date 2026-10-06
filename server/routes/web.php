@@ -13,6 +13,8 @@ Route::middleware('dashboard:guest')->group(function (): void {
 Route::middleware('dashboard')->group(function (): void {
     Route::redirect('/', '/dashboard');
     Route::get('/dashboard', DashboardController::class)->name('dashboard.index');
+    Route::get('/dashboard/monitoring', [\App\Http\Controllers\MonitoringSettingsController::class, 'show'])->name('dashboard.monitoring');
+    Route::post('/dashboard/monitoring', [\App\Http\Controllers\MonitoringSettingsController::class, 'save'])->name('dashboard.monitoring.save');
     Route::get('/dashboard/clear', [DashboardClearController::class, 'show'])->name('dashboard.clear');
     Route::post('/dashboard/clear', [DashboardClearController::class, 'clear'])->name('dashboard.clear.confirm');
     Route::post('/logout', [DashboardLoginController::class, 'logout'])->name('dashboard.logout');

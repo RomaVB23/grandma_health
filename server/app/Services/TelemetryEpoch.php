@@ -36,6 +36,7 @@ class TelemetryEpoch
                 'cleared_before_ms' => $boundary, 'generation' => $epoch->generation + 1,
             ]);
             $count = DB::table('watch_events')->where('device_id', $device)->delete();
+            app(MonitoringSettings::class)->reset();
             // Keep membership, invites, polling cursor and notification preferences.
             // Advance incident generations so old delivered warnings cannot create
             // a spurious recovery or collide with the next incident's event key.

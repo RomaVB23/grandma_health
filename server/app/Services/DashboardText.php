@@ -30,4 +30,15 @@ class DashboardText
             'error' => 'Ошибка', default => 'Неизвестно',
         };
     }
+
+    public function wearing(string $state): string
+    {
+        return match ($state) { 'on' => 'На руке', 'off' => 'Сняты', default => 'Неизвестно' };
+    }
+
+    public function pulseControl(string $state): string
+    {
+        return match ($state) { 'disabled' => 'Контроль выключен', 'out_of_range' => 'Вне заданного диапазона',
+            'in_range' => 'В заданном диапазоне', default => 'Ожидаем свежий замер на руке' };
+    }
 }

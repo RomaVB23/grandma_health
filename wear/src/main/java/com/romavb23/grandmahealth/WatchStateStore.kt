@@ -26,6 +26,20 @@ internal object WatchStateStore {
     }
 
     @Synchronized
+    fun setWearing(context: Context, state: String): Boolean {
+        val prefs = preferences(context)
+        if (prefs.getString("wearing_state", "unknown") == state) return false
+        prefs.edit().putString("wearing_state", state)
+            .putLong("wearing_since", if (state == "unknown") 0L else System.currentTimeMillis()).apply()
+        return true
+    }
+
+    fun wearing(context: Context): Pair<String, Long> {
+        val prefs = preferences(context)
+        return (prefs.getString("wearing_state", "unknown") ?: "unknown") to prefs.getLong("wearing_since", 0L)
+    }
+
+    @Synchronized
     fun saveHeartRate(context: Context, bpm: Int, measuredAt: Long): Boolean {
         if (bpm <= 0 || measuredAt <= 0L || !isEnabled(context)) return false
         val preferences = preferences(context)

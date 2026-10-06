@@ -43,9 +43,14 @@ class WatchEventController
             $inserted = DB::affectingStatement(
                 'INSERT INTO watch_events (event_id, device_id, source, received_at_ms, watch_sent_at_ms, '
                 .'bpm, measured_at_ms, battery_percent, charging, monitoring_status, server_received_at_ms, '
-                .'live_contact, payload_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
+                .'live_contact, payload_hash, wearing_state, wearing_since_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
                 .'ON CONFLICT(event_id) DO NOTHING',
-                [...array_values($storedPayload), $now, (int) $liveContact, $hash],
+                [
+                    ...array_map(fn ($key) => $storedPayload[$key], ['event_id', 'device_id', 'source', 'received_at_ms',
+                        'watch_sent_at_ms', 'bpm', 'measured_at_ms', 'battery_percent', 'charging', 'monitoring_status']),
+                    $now, (int) $liveContact, $hash, $storedPayload['wearing_state'] ?? 'unknown',
+                    $storedPayload['wearing_since_ms'] ?? null,
+                ],
             );
 
             $event = DB::table('watch_events')->where('event_id', $payload['event_id'])->first();

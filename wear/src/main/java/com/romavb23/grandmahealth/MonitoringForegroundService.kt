@@ -33,6 +33,9 @@ class MonitoringForegroundService : Service() {
     private val passiveClient by lazy { HealthServices.getClient(this).passiveMonitoringClient }
     private var started = false
     private var wakeLock: PowerManager.WakeLock? = null
+    private val wearingSensor by lazy { WearingSensor(this) {
+        if (started) sendWatchHeartbeat(this)
+    } }
 
     private val heartbeat = object : Runnable {
         override fun run() {
@@ -85,6 +88,7 @@ class MonitoringForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP || !WatchStateStore.isEnabled(this)) {
+            wearingSensor.stop()
             WatchStateStore.setEnabled(this, false)
             WatchStateStore.setStatus(this, "stopped")
             sendWatchHeartbeat(this)
@@ -110,6 +114,7 @@ class MonitoringForegroundService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
             started = true
+            wearingSensor.start()
             WatchStateStore.setStatus(this, "starting")
             val powerManager = getSystemService(PowerManager::class.java)
             wakeLock = powerManager.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GrandmaHealth:monitoring")
@@ -163,6 +168,7 @@ class MonitoringForegroundService : Service() {
     }
 
     private fun fail(status: String) {
+        wearingSensor.stop()
         WatchStateStore.setEnabled(this, false)
         WatchStateStore.setStatus(this, status)
         sendWatchHeartbeat(this)
@@ -210,6 +216,7 @@ class MonitoringForegroundService : Service() {
 
     override fun onDestroy() {
         started = false
+        wearingSensor.stop()
         handler.removeCallbacks(heartbeat)
         wakeLock?.let { if (it.isHeld) it.release() }
         if (WatchStateStore.status(this) in setOf("active", "starting")) {

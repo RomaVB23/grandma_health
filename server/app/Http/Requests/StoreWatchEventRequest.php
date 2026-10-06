@@ -28,6 +28,8 @@ class StoreWatchEventRequest extends FormRequest
             'monitoring_status' => ['required', Rule::in([
                 'active', 'starting', 'stopped', 'permission_lost', 'unsupported', 'error', 'unknown',
             ])],
+            'wearing_state' => ['sometimes', Rule::in(['on', 'off', 'unknown'])],
+            'wearing_since_ms' => ['sometimes', 'nullable', 'integer', 'min:1'],
         ];
     }
 
@@ -36,6 +38,15 @@ class StoreWatchEventRequest extends FormRequest
         return [function (Validator $validator): void {
             if ($validator->errors()->isNotEmpty()) {
                 return;
+            }
+
+            if ($this->has('wearing_state') || $this->has('wearing_since_ms')) {
+                $known = in_array($this->input('wearing_state'), ['on', 'off'], true);
+                $since = $this->input('wearing_since_ms');
+                if (!$this->has('wearing_state') || ($known && $since === null) || (!$known && $since !== null)
+                    || ($since !== null && (int) $since > (int) $this->input('watch_sent_at_ms'))) {
+                    $validator->errors()->add('wearing_since_ms', 'Wearing state and its timestamp must agree.');
+                }
             }
 
             $now = (int) floor(microtime(true) * 1000);
@@ -67,7 +78,7 @@ class StoreWatchEventRequest extends FormRequest
         $data = $this->validated();
 
         // Normalize before hashing: equivalent JSON retries keep the same identity.
-        return [
+        $payload = [
             'event_id' => strtolower($data['event_id']),
             'device_id' => $data['device_id'],
             'source' => $data['source'],
@@ -79,5 +90,11 @@ class StoreWatchEventRequest extends FormRequest
             'charging' => (bool) $data['charging'],
             'monitoring_status' => $data['monitoring_status'],
         ];
+        // Keep the original hash of pre-upgrade Android queue packets unchanged.
+        if (array_key_exists('wearing_state', $data)) {
+            $payload['wearing_state'] = $data['wearing_state'];
+            $payload['wearing_since_ms'] = isset($data['wearing_since_ms']) ? (int) $data['wearing_since_ms'] : null;
+        }
+        return $payload;
     }
 }

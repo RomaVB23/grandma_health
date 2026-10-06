@@ -19,12 +19,22 @@ class StatusText
             'permission_lost' => 'нет разрешения', 'unsupported' => 'не поддерживается',
             'error' => 'ошибка', default => 'статус неизвестен',
         };
+        $wearing = match ($s['wearing_state'] ?? 'unknown') {
+            'on' => 'на руке', 'off' => 'сняты', default => 'неизвестно — нужен свежий сигнал датчика',
+        };
+        $control = !($s['pulse_control_enabled'] ?? false) ? 'выключен'
+            : (($s['pulse_eligible'] ?? false) ? (($s['pulse_control_status'] ?? '') === 'out_of_range'
+                ? 'показание вне заданного диапазона' : 'показание в заданном диапазоне') : 'ожидаем свежий замер на руке');
 
         return "📊 Состояние на ".$this->time($s['server_time_ms'])."\n\n"
             ."❤️ Последний пульс: $pulse\n"
             .'Измерен: '.$this->time($s['measured_at_ms'])."\nПрошло с измерения: $pulseAge"
             .($s['measurement_stale'] ? ' · значение устарело' : '')."\n\n"
             ."⌚ Связь: $connection\nПоследний сигнал: ".$this->time($s['last_live_contact_at_ms'])."\n\n"
+            ."⌚ Ношение: $wearing\n"
+            .'Данные ношения: '.$this->time($s['wearing_reported_at_ms'] ?? null)."\n"
+            ."Контроль пульса: $control"
+            .(isset($s['pulse_lower'], $s['pulse_upper']) ? ' · границы '.$s['pulse_lower'].'–'.$s['pulse_upper'].' уд/мин' : '')."\n\n"
             ."🔋 Заряд часов: $battery\nДанные заряда: ".$this->time($s['snapshot_at_ms'])."\n"
             ."Мониторинг: $monitoring (последний известный статус)\n\n"
             .'Это последние полученные данные. Новое измерение на часах этой кнопкой пока не запускается.';

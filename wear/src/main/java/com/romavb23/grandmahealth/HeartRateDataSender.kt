@@ -28,6 +28,9 @@ internal fun sendHeartRateToPhone(
             dataMap.putLong("sent_at", System.currentTimeMillis())
             dataMap.putInt(HEART_RATE_KEY_BATTERY_PERCENT, batteryPercent)
             dataMap.putBoolean(HEART_RATE_KEY_CHARGING, charging)
+            val (wearing, since) = WatchStateStore.wearing(context)
+            dataMap.putString("wearing_state", wearing)
+            dataMap.putLong("wearing_since_ms", since)
             asPutDataRequest().setUrgent()
         }
 
@@ -51,6 +54,9 @@ internal fun sendWatchHeartbeat(context: Context) {
             ?.takeIf { it in 0..100 } ?: -1)
         putBoolean("charging", battery?.isCharging == true)
         putString("monitoring_status", WatchStateStore.status(app))
+        val (wearing, since) = WatchStateStore.wearing(app)
+        putString("wearing_state", wearing)
+        putLong("wearing_since_ms", since)
     }.toByteArray()
     Wearable.getNodeClient(app).connectedNodes
         .addOnSuccessListener { nodes ->

@@ -31,6 +31,9 @@ internal class TelemetryOutbox private constructor(context: Context) :
         if (!heartbeat && !validPulse) return
         val id = UUID.randomUUID().toString()
         val source = if (heartbeat) "heartbeat" else "measurement"
+        val wearingState = data.getString("wearing_state") ?: "unknown"
+        val wearingSince = data.getLong("wearing_since_ms", 0L)
+        val validWearing = wearingState in setOf("on", "off") && wearingSince in 1L..sentAt
         val body = JSONObject().put("event_id", id).put("device_id", "grandma-watch")
             .put("source", source).put("received_at_ms", receivedAt).put("watch_sent_at_ms", sentAt)
             .put("bpm", if (validPulse) bpm else JSONObject.NULL)
@@ -38,7 +41,9 @@ internal class TelemetryOutbox private constructor(context: Context) :
             .put("battery_percent", data.getInt(HEART_RATE_KEY_BATTERY_PERCENT, -1)
                 .takeIf { it in 0..100 } ?: JSONObject.NULL)
             .put("charging", data.getBoolean(HEART_RATE_KEY_CHARGING, false))
-            .put("monitoring_status", status.takeIf { it in STATUSES } ?: "unknown").toString()
+            .put("monitoring_status", status.takeIf { it in STATUSES } ?: "unknown")
+            .put("wearing_state", if (validWearing) wearingState else "unknown")
+            .put("wearing_since_ms", if (validWearing) wearingSince else JSONObject.NULL).toString()
         // SQLite transaction is complete before we announce a packet ready for upload.
         writableDatabase.insertOrThrow("outbox", null, ContentValues().apply {
             put("id", id); put("body", body); put("source", source); put("received_at", receivedAt)

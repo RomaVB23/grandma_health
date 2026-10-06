@@ -80,6 +80,7 @@ private fun HeartRateApp() {
     }
 
     var monitoringEnabled by remember { mutableStateOf(WatchStateStore.isEnabled(context)) }
+    var wearingState by remember { mutableStateOf(WatchStateStore.wearing(context).first) }
     // Background sensor permission may be granted on a separate system settings screen.
     DisposableEffect(context) {
         val lifecycle = (context as? ComponentActivity)?.lifecycle
@@ -101,6 +102,7 @@ private fun HeartRateApp() {
     DisposableEffect(monitoringPreferences) {
         val listener = SharedPreferences.OnSharedPreferenceChangeListener { _, _ ->
             monitoringEnabled = WatchStateStore.isEnabled(context)
+            wearingState = WatchStateStore.wearing(context).first
             backgroundStatus = monitoringStatusText(WatchStateStore.status(context))
         }
         monitoringPreferences.registerOnSharedPreferenceChangeListener(listener)
@@ -188,6 +190,7 @@ private fun HeartRateApp() {
         bpm = bpm,
         status = status,
         backgroundStatus = backgroundStatus,
+        wearingState = wearingState,
         permissionGranted = permissionGranted,
         backgroundPermissionGranted = backgroundPermissionGranted,
         requestPermission = { permissionLauncher.launch(heartRatePermission()) },
@@ -217,6 +220,7 @@ private fun HeartRateScreen(
     requestBackgroundPermission: () -> Unit,
     monitoringEnabled: Boolean,
     toggleMonitoring: () -> Unit,
+    wearingState: String = "unknown",
 ) {
     GrandmaHealthTheme {
         AppScaffold {
@@ -247,6 +251,15 @@ private fun HeartRateScreen(
                     )
                     Text(
                         text = backgroundStatus,
+                        modifier = Modifier.padding(top = 6.dp),
+                        style = MaterialTheme.typography.bodySmall,
+                    )
+                    Text(
+                        text = when (wearingState) {
+                            "on" -> "Часы на руке"
+                            "off" -> "Часы сняты"
+                            else -> "Ношение: неизвестно"
+                        },
                         modifier = Modifier.padding(top = 6.dp),
                         style = MaterialTheme.typography.bodySmall,
                     )

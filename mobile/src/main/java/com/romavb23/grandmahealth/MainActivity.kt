@@ -168,6 +168,16 @@ private fun HeartRateContent(
             style = MaterialTheme.typography.bodyMedium,
         )
         Text(
+            text = when {
+                !contactRecent -> "Ношение часов: нет свежих данных"
+                reading.wearingState == "on" -> "Часы на руке"
+                reading.wearingState == "off" -> "Часы сняты"
+                else -> "Ношение часов: неизвестно"
+            },
+            modifier = Modifier.padding(top = 8.dp),
+            style = MaterialTheme.typography.bodyMedium,
+        )
+        Text(
             text = "Связь и возраст пульса — разные показатели. Этот экран не подтверждает, что со здоровьем всё в порядке.",
             modifier = Modifier.padding(top = 20.dp),
             style = MaterialTheme.typography.bodySmall,
@@ -200,6 +210,7 @@ private fun SharedPreferences.readHeartRate(): HeartRateReading {
         lastContactElapsed = getLong(WATCH_KEY_LAST_CONTACT_ELAPSED, 0L),
         lastContactBootCount = getInt(WATCH_KEY_LAST_CONTACT_BOOT_COUNT, -1),
         monitoringStatus = getString(WATCH_KEY_MONITORING_STATUS, "unknown") ?: "unknown",
+        wearingState = getString("wearing_state", "unknown") ?: "unknown",
     )
 }
 
@@ -230,4 +241,5 @@ private data class HeartRateReading(
     val lastContactElapsed: Long,
     val lastContactBootCount: Int,
     val monitoringStatus: String,
+    val wearingState: String = "unknown",
 )

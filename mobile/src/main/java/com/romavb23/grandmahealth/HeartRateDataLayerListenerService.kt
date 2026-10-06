@@ -57,6 +57,14 @@ class HeartRateDataLayerListenerService : WearableListenerService() {
                 .putBoolean(HEART_RATE_KEY_CHARGING, data.getBoolean(HEART_RATE_KEY_CHARGING, false))
         }
         if (liveHeartbeat) {
+            if (sentAt >= preferences.getLong("wearing_snapshot_at", 0L)) {
+                val state = data.getString("wearing_state") ?: "unknown"
+                val since = data.getLong("wearing_since_ms", 0L)
+                val valid = state in setOf("on", "off") && since in 1L..sentAt
+                editor.putString("wearing_state", if (valid) state else "unknown")
+                    .putLong("wearing_since_ms", if (valid) since else 0L)
+                    .putLong("wearing_snapshot_at", sentAt)
+            }
             // Phone reception time + monotonic clock; NOT the measurement time.
             editor.putLong(WATCH_KEY_LAST_CONTACT_AT, now)
                 .putLong(WATCH_KEY_LAST_CONTACT_ELAPSED, SystemClock.elapsedRealtime())
