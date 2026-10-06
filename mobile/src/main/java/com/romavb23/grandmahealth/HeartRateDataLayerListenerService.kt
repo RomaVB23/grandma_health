@@ -42,10 +42,10 @@ class HeartRateDataLayerListenerService : WearableListenerService() {
         val editor = preferences.edit()
         val bpm = data.getInt(HEART_RATE_KEY_BPM, -1)
         val measuredAt = data.getLong(HEART_RATE_KEY_MEASURED_AT, 0L)
-        if (bpm > 0 && WatchFreshness.shouldReplaceMeasurement(
+        val newMeasurement = bpm in 1..1000 && WatchFreshness.shouldReplaceMeasurement(
                 measuredAt, preferences.getLong(HEART_RATE_KEY_MEASURED_AT, 0L), now,
             )
-        ) {
+        if (newMeasurement) {
             editor.putInt(HEART_RATE_KEY_BPM, bpm)
                 .putLong(HEART_RATE_KEY_MEASURED_AT, measuredAt)
         }
@@ -64,6 +64,18 @@ class HeartRateDataLayerListenerService : WearableListenerService() {
                 .putString(WATCH_KEY_MONITORING_STATUS, data.getString(WATCH_KEY_MONITORING_STATUS) ?: "unknown")
         }
         editor.apply()
+        if (liveHeartbeat || newMeasurement) {
+            try {
+                TelemetryOutbox.get(this).enqueue(data, liveHeartbeat, now,
+                    if (liveHeartbeat) data.getString(WATCH_KEY_MONITORING_STATUS) ?: "unknown"
+                    else preferences.getString(WATCH_KEY_MONITORING_STATUS, "unknown") ?: "unknown")
+                ServerUploadService.packetReady()
+            } catch (_: Exception) {
+                getSharedPreferences("server_upload", Context.MODE_PRIVATE).edit()
+                    .putString("last_error", "Не удалось записать пакет в очередь телефона").apply()
+                Log.e(LOG_TAG, "Cannot persist telemetry packet")
+            }
+        }
     }
 }
 

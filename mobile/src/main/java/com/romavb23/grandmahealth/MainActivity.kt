@@ -172,6 +172,7 @@ private fun HeartRateContent(
             modifier = Modifier.padding(top = 20.dp),
             style = MaterialTheme.typography.bodySmall,
         )
+        ServerUploadPanel()
     }
 }
 

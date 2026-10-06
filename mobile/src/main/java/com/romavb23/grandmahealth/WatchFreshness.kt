@@ -4,7 +4,7 @@ package com.romavb23.grandmahealth
 internal object WatchFreshness {
     const val CONTACT_TIMEOUT_MS = 600_000L
     const val MEASUREMENT_STALE_MS = 300_000L
-    private const val CLOCK_TOLERANCE_MS = 120_000L
+    const val CLOCK_TOLERANCE_MS = 120_000L
 
     fun heartbeatIsTimely(sentAt: Long, now: Long): Boolean =
         sentAt > 0L && sentAt >= now - CLOCK_TOLERANCE_MS && sentAt <= now + CLOCK_TOLERANCE_MS
