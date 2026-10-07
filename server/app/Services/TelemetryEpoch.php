@@ -35,6 +35,11 @@ class TelemetryEpoch
             DB::table('telemetry_epochs')->where('device_id', $device)->update([
                 'cleared_before_ms' => $boundary, 'generation' => $epoch->generation + 1,
             ]);
+            DB::table('measurement_requests')->where('device_id', $device)->whereIn('state', MeasurementRequests::PENDING)
+                ->update(['state' => 'cancelled', 'finished_at_ms' => $now]);
+            DB::table('measurement_requests')->where('device_id', $device)->update(['state' => 'cancelled', 'bpm' => null, 'measured_at_ms' => null, 'result_hash' => null]);
+            DB::table('measurement_subscribers')->delete();
+            DB::table('telegram_outbox')->where('purpose', 'measurement')->where('state', 'pending')->update(['state' => 'cancelled']);
             $count = DB::table('watch_events')->where('device_id', $device)->delete();
             app(MonitoringSettings::class)->reset();
             // Keep membership, invites, polling cursor and notification preferences.

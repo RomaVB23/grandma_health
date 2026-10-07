@@ -54,10 +54,19 @@ class DashboardTest extends TestCase
         ], $values));
     }
 
+    public function test_measurement_button_creates_and_resumes_a_correlated_request(): void
+    {
+        $r = $this->signedIn()->postJson('/dashboard/measurement-requests')->assertStatus(202)->json();
+        $this->signedIn()->get('/dashboard')->assertOk()->assertSee('measurement-button')->assertSee($r['id']);
+        $this->signedIn()->getJson('/dashboard/measurement-requests/'.$r['id'])->assertOk()->assertJsonPath('status', 'queued');
+        $again = $this->signedIn()->postJson('/dashboard/measurement-requests')->assertStatus(202)->json();
+        $this->assertSame($r['id'], $again['id']);
+    }
+
     public function test_guests_cannot_read_history_even_with_a_telemetry_bearer(): void
     {
         $this->event();
-        $this->get('/dashboard')->assertRedirect('/login')->assertDontSee('72');
+        $this->get('/dashboard')->assertRedirect('/login')->assertDontSeeText('72');
         $this->withHeader('Authorization', 'Bearer test-token')->get('/dashboard')->assertRedirect('/login');
         $this->get('/login')->assertOk()->assertSee('Пароль веб-интерфейса')->assertDontSee('test-token');
     }
@@ -66,7 +75,8 @@ class DashboardTest extends TestCase
     {
         file_put_contents($this->passwordFile, 'not-a-hash');
         $this->event();
-        $this->get('/dashboard')->assertStatus(503)->assertSee('ещё не настроен')->assertDontSee('72');
+        $this->get('/dashboard')->assertStatus(503)->assertSee('ещё не настроен')
+            ->assertDontSeeText('72')->assertViewMissing('status')->assertViewMissing('events');
         $this->post('/login', ['password' => self::PASSWORD])->assertStatus(503);
     }
 
@@ -244,6 +254,8 @@ class DashboardTest extends TestCase
         });
         $this->post('/login', ['password' => self::PASSWORD])->assertStatus(419);
         $this->signedIn()->post('/logout')->assertStatus(419);
+        $this->signedIn()->postJson('/dashboard/measurement-requests')->assertStatus(419);
+        $this->assertDatabaseCount('measurement_requests', 0);
         $this->withSession(['_token' => 'test-csrf-token'])->post('/login', ['password' => self::PASSWORD, '_token' => 'test-csrf-token'])
             ->assertRedirect('/dashboard');
     }

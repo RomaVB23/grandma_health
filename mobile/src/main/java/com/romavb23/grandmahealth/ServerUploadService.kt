@@ -28,6 +28,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 class ServerUploadService : Service() {
     private val handler = Handler(Looper.getMainLooper())
     private val worker = Executors.newSingleThreadExecutor()
+    private val remoteWorker = Executors.newSingleThreadExecutor()
+    private val remoteStarted = AtomicBoolean(false)
     private val busy = AtomicBoolean(false)
     private lateinit var settings: UploadSettings
     private lateinit var outbox: TelemetryOutbox
@@ -82,6 +84,9 @@ class ServerUploadService : Service() {
         settings.preferences.edit().putBoolean("enabled", true)
             .putLong("last_service_started_at", System.currentTimeMillis()).apply()
         active = this
+        if (remoteStarted.compareAndSet(false, true)) {
+            remoteWorker.execute { RemoteMeasurements.run(applicationContext) { !destroyed && settings.enabled } }
+        }
         if (!networkRegistered) {
             getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
             networkRegistered = true
@@ -175,6 +180,7 @@ class ServerUploadService : Service() {
         handler.removeCallbacksAndMessages(null)
         if (networkRegistered) getSystemService(ConnectivityManager::class.java).unregisterNetworkCallback(networkCallback)
         worker.shutdown()
+        remoteWorker.shutdown()
         super.onDestroy()
     }
 

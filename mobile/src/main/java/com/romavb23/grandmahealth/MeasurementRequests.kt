@@ -34,17 +34,17 @@ internal object MeasurementRequests {
     }
 
     @Synchronized
-    fun request(context: Context) {
+    fun request(context: Context, requestId: String? = null): String {
         val app = context.applicationContext
         expire(app)
         val p = prefs(app)
-        if (MeasurementRequestRules.isPending(p.getString("status", "idle") ?: "idle")) return
+        if (MeasurementRequestRules.isPending(p.getString("status", "idle") ?: "idle")) return "busy"
         val now = SystemClock.elapsedRealtime()
         val boot = phoneBootCount(app)
-        if (boot < 0) { p.edit().putString("status", "clock_unavailable").apply(); return }
+        if (boot < 0) { p.edit().putString("status", "clock_unavailable").apply(); return "clock_unavailable" }
         if (p.contains("started_elapsed") && p.getInt("boot", -1) == boot &&
-            now - p.getLong("started_elapsed", 0L) in 0L until MeasurementRequestRules.COOLDOWN_MS) return
-        val id = UUID.randomUUID().toString()
+            now - p.getLong("started_elapsed", 0L) in 0L until MeasurementRequestRules.COOLDOWN_MS) return "cooldown"
+        val id = requestId ?: UUID.randomUUID().toString()
         p.edit().clear().putString("id", id).putString("status", "sending")
             .putLong("started_elapsed", now).putInt("boot", boot).apply()
         try {
@@ -65,6 +65,7 @@ internal object MeasurementRequests {
                 }
             }.addOnFailureListener { fail(app, id, "no_connection") }
         } catch (_: Exception) { fail(app, id, "no_connection") }
+        return "sending"
     }
 
     /** True only for a correlated, timely success: the caller may then persist its telemetry. */
@@ -87,6 +88,8 @@ internal object MeasurementRequests {
                 return false
             }
             p.edit().putString("status", "success").putInt("bpm", bpm).putLong("measured_at", measuredAt).apply()
+            RemoteMeasurements.capture(context, id, "success", bpm, measuredAt,
+                data.getLong("sample_elapsed", 0L) - data.getLong("request_started_elapsed", 0L))
             Log.i("GrandmaMeasure", "New requested measurement received")
             return true
         }
@@ -105,6 +108,7 @@ internal object MeasurementRequests {
                 p.getInt("boot", -1), phoneBootCount(context), p.getLong("started_elapsed", -1L),
                 SystemClock.elapsedRealtime())) {
             p.edit().putString("status", "timeout").apply()
+            RemoteMeasurements.capture(context, p.getString("id", "") ?: "", "timeout")
         }
     }
 
@@ -118,6 +122,7 @@ internal object MeasurementRequests {
     private fun fail(context: Context, id: String, status: String) {
         if (current(context, id)) {
             prefs(context).edit().putString("status", status).apply()
+            RemoteMeasurements.capture(context, id, status)
             Log.i("GrandmaMeasure", "Measurement request ended: $status")
         }
     }

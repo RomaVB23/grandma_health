@@ -16,12 +16,14 @@ class BotHandler
         }
         // Cursor and effects commit together: Telegram retries cannot create another invite.
         DB::transaction(function () use ($update, $id): void {
+            // Obtain SQLite's write lock before reading the cursor or creating a request.
+            DB::table('telegram_state')->insertOrIgnore(['key' => 'update_id', 'value' => '-1']);
             if ($id <= (int) $this->store->value('update_id', '-1')) {
                 return;
             }
             $this->dispatch($update);
             $this->store->put('update_id', (string) $id);
-        });
+        }, 5);
     }
 
     private function dispatch(array $update): void
@@ -55,13 +57,23 @@ class BotHandler
         }
         $action = $callback ? (string) ($callback['data'] ?? '') : match ($text) {
             '📊 Состояние бабушки', '🔄 Обновить', '/status' => 'status',
+            '❤️ Измерить сейчас' => 'measure',
             '🔔 Мои уведомления' => 'notifications', '👥 Участники' => 'members:0',
             '➕ Добавить участника' => 'invite', '❓ Помощь', '/help' => 'help', default => 'menu',
         };
         if ($action === 'status') {
-            $this->store->enqueue($user, '', $this->inline([['🔄 Обновить', 'status'], ['⬅️ Меню', 'menu']]), 'status');
+            $this->store->enqueue($user, '', $this->inline([['❤️ Измерить сейчас', 'measure'], ['🔄 Обновить', 'status'], ['⬅️ Меню', 'menu']]), 'status');
+        } elseif ($action === 'measure') {
+            try {
+                $request = app(\App\Services\MeasurementRequests::class)->create($user);
+                $this->store->enqueue($user, app(\App\Services\MeasurementText::class)->format($request)
+                    ."\nРезультат придёт отдельным сообщением.", $this->menu($user));
+            } catch (\Illuminate\Validation\ValidationException) {
+                $this->store->enqueue($user, 'Подождите 10 секунд между запросами.', $this->menu($user));
+            }
         } elseif ($action === 'help') {
             $this->store->enqueue($user, 'Кнопка состояния показывает последние данные сервера и их возраст. Свежая связь не означает, что пульс только что измерен.'
+                ."\n\n«Измерить сейчас» запрашивает новый пульс через телефон. Экран часов можно оставить погашенным. При снятых часах или недоступном телефоне придёт причина отказа."
                 ."\n\nТехнические оповещения сообщают о потере связи, низком заряде и длительном снятии часов. Контроль пульса включается отдельно в веб-интерфейсе: границы и подтверждение задаёт администратор."
                 ."\n\nУведомления о пульсе основаны на показаниях часов и не являются диагнозом. Неизвестное ношение и устаревший пульс не означают возвращение в диапазон."
                 ."\n\nЕсли выключен компьютер или пропал его интернет, этот бот не сможет прислать сообщение до восстановления работы.", $this->menu($user));
@@ -187,6 +199,7 @@ class BotHandler
     public function menu(int $user): array
     {
         $rows = [[['text' => '📊 Состояние бабушки'], ['text' => '🔄 Обновить']],
+            [['text' => '❤️ Измерить сейчас']],
             [['text' => '🔔 Мои уведомления'], ['text' => '❓ Помощь']]];
         if ($this->store->isOwner($user)) {
             $rows[] = [['text' => '👥 Участники'], ['text' => '➕ Добавить участника']];

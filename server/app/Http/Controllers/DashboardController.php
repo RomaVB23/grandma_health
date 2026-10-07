@@ -43,6 +43,6 @@ class DashboardController
         // Statistics always use unique measurements, never pulse copies from heartbeats.
         $summaryQuery = $history->query(array_replace($filters, ['mode' => 'measurements']), $timezone);
         $summary = $summaryQuery->selectRaw('COUNT(*) as count, MIN(bpm) as min_bpm, MAX(bpm) as max_bpm, AVG(bpm) as avg_bpm')->first();
-        return view('dashboard.index', compact('events', 'filters', 'summary', 'timezone', 'text') + ['status' => $status->snapshot()]);
+        return view('dashboard.index', compact('events', 'filters', 'summary', 'timezone', 'text') + ['status' => $status->snapshot(), 'measurementRequest' => app(\App\Services\MeasurementRequests::class)->latest()]);
     }
 }

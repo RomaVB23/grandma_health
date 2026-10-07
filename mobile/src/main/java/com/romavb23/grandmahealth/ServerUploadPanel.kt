@@ -67,6 +67,8 @@ internal fun rememberUploadController(): UploadController {
                 UploadViewState(loaded = true, running = ServerUploadService.isRunning(),
                     pending = outbox.count(false), blocked = outbox.count(true),
                     lastAck = settings.preferences.getLong("last_ack_at", 0L),
+                    remoteChecked = settings.preferences.getLong("remote_checked_at", 0L),
+                    remoteError = settings.preferences.getString("remote_error", "") ?: "",
                     error = settings.preferences.getString("last_error", "") ?: "",
                     batteryExempt = context.getSystemService(PowerManager::class.java)
                         .isIgnoringBatteryOptimizations(context.packageName))
@@ -125,6 +127,10 @@ internal fun ServerUploadPanel(controller: UploadController, modifier: Modifier 
             Text(if (state.lastAck > 0L) "Последнее подтверждение сервера: " + uploadTime(state.lastAck)
                 else "Сервер ещё не подтверждал пакеты", style = MaterialTheme.typography.bodyMedium, color = muted)
             if (state.error.isNotBlank()) Text(state.error, color = MaterialTheme.colorScheme.error)
+            Text(if (!state.running) "Запросы нового замера: остановлены вместе с передачей"
+                else if (state.remoteChecked > 0L) "Запросы нового замера: проверяются в фоне · " + uploadTime(state.remoteChecked)
+                else "Запросы нового замера: подключаемся к серверу", style = MaterialTheme.typography.bodySmall, color = muted)
+            if (state.running && state.remoteError.isNotBlank()) Text(state.remoteError, color = MaterialTheme.colorScheme.error)
             if (state.running) {
                 OutlinedButton(onClick = controller.onStop, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Остановить передачу") }
                 Button(onClick = controller.onRetry, modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)) { Text("Отправить очередь сейчас") }
@@ -208,6 +214,7 @@ private fun uploadTime(timestamp: Long): String =
 internal data class UploadViewState(
     val loaded: Boolean = false, val running: Boolean = false, val pending: Int = 0, val blocked: Int = 0,
     val lastAck: Long = 0, val error: String = "", val batteryExempt: Boolean = false,
+    val remoteChecked: Long = 0, val remoteError: String = "",
 )
 
 internal class UploadController(

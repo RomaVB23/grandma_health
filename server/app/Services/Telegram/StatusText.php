@@ -37,7 +37,7 @@ class StatusText
             .(isset($s['pulse_lower'], $s['pulse_upper']) ? ' · границы '.$s['pulse_lower'].'–'.$s['pulse_upper'].' уд/мин' : '')."\n\n"
             ."🔋 Заряд часов: $battery\nДанные заряда: ".$this->time($s['snapshot_at_ms'])."\n"
             ."Мониторинг: $monitoring (последний известный статус)\n\n"
-            .'Это последние полученные данные. Новое измерение на часах этой кнопкой пока не запускается.';
+            .'Это последние полученные данные. Для нового замера нажмите «Измерить сейчас».';
     }
 
     private function time(?int $milliseconds): string

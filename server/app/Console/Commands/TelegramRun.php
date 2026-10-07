@@ -52,12 +52,13 @@ class TelegramRun extends Command
                 try {
                     $store->put('worker_tick_at', (string) BotStore::now());
                     $alerts->tick();
+                    app(\App\Services\MeasurementRequests::class)->notify();
                     $delivery->flush();
                     if (!$running) { break; }
                     $pending = \Illuminate\Support\Facades\DB::table('telegram_outbox')->where('state', 'pending')
                         ->where('available_at_ms', '<=', BotStore::now())->exists();
                     $updates = $api->call('getUpdates', ['offset' => (int) $store->value('update_id', '-1') + 1,
-                        'limit' => 50, 'timeout' => $pending ? 1 : 20, 'allowed_updates' => ['message', 'callback_query']]);
+                        'limit' => 50, 'timeout' => ($pending || \Illuminate\Support\Facades\DB::table('measurement_subscribers')->exists()) ? 1 : 20, 'allowed_updates' => ['message', 'callback_query']]);
                     foreach (is_array($updates) ? $updates : [] as $update) {
                         if (!$running) { break; }
                         $handler->handle($update);
