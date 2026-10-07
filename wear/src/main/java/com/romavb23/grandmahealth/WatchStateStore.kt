@@ -15,6 +15,12 @@ internal object WatchStateStore {
 
     fun isEnabled(context: Context): Boolean = preferences(context).getBoolean(ENABLED, true)
 
+    // Initial screen defaults must not start monitoring on a never-configured watch.
+    fun shouldRestore(context: Context): Boolean {
+        val prefs = preferences(context)
+        return prefs.contains(ENABLED) && prefs.getBoolean(ENABLED, false)
+    }
+
     fun setEnabled(context: Context, enabled: Boolean) {
         preferences(context).edit().putBoolean(ENABLED, enabled).apply()
     }

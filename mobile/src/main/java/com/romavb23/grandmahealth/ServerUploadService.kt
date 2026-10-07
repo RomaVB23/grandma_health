@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
+import android.content.Context
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.content.pm.ServiceInfo
@@ -15,7 +16,9 @@ import android.os.IBinder
 import android.os.Looper
 import android.os.PowerManager
 import android.os.SystemClock
+import android.util.Log
 import androidx.core.app.NotificationCompat
+import androidx.core.content.ContextCompat
 import org.json.JSONObject
 import java.net.HttpURLConnection
 import java.net.URL
@@ -50,7 +53,10 @@ class ServerUploadService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        if (intent == null && !settings.enabled) { stopSelf(); return START_NOT_STICKY }
+        if ((intent == null || intent.action == ACTION_RESTORE) && !settings.enabled) {
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
             setError("Нет разрешения на Bluetooth — запустите отправку с экрана приложения")
             stopSelf()
@@ -73,7 +79,8 @@ class ServerUploadService : Service() {
             stopSelf()
             return START_NOT_STICKY
         }
-        settings.preferences.edit().putBoolean("enabled", true).apply()
+        settings.preferences.edit().putBoolean("enabled", true)
+            .putLong("last_service_started_at", System.currentTimeMillis()).apply()
         active = this
         if (!networkRegistered) {
             getSystemService(ConnectivityManager::class.java).registerDefaultNetworkCallback(networkCallback)
@@ -177,7 +184,30 @@ class ServerUploadService : Service() {
         private const val CHANNEL = "server_upload"
         private const val NOTIFICATION_ID = 2
         private const val ACTION_STOP = "com.romavb23.grandmahealth.STOP_UPLOAD"
+        private const val ACTION_RESTORE = "com.romavb23.grandmahealth.RESTORE_UPLOAD"
         @Volatile private var active: ServerUploadService? = null
+
+        internal fun restore(context: Context) {
+            val saved = UploadSettings(context)
+            if (!saved.enabled) return
+            saved.preferences.edit()
+                .putLong("last_restore_attempt_at", System.currentTimeMillis()).apply()
+            if (saved.endpoint.isBlank() || saved.preferences.getString("token", "").isNullOrBlank()) {
+                saved.preferences.edit().putString("last_error",
+                    "Для восстановления передачи сохраните адрес и токен сервера").apply()
+                return
+            }
+            try {
+                ContextCompat.startForegroundService(context,
+                    Intent(context, ServerUploadService::class.java).setAction(ACTION_RESTORE))
+                Log.i("GrandmaStartup", "Phone upload restore requested")
+            } catch (_: Exception) {
+                saved.preferences.edit().putString("last_error",
+                    "Android не разрешил восстановить передачу. Запустите её из приложения").apply()
+                Log.w("GrandmaStartup", "Android rejected phone restore; open the app")
+            }
+        }
+
         fun isRunning(): Boolean = active != null
         internal fun packetReady() { active?.handler?.post { active?.requestUpload() } }
     }

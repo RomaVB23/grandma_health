@@ -114,6 +114,8 @@ class MonitoringForegroundService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
             started = true
+            WatchStateStore.preferences(this).edit()
+                .putLong("last_service_started_at", System.currentTimeMillis()).apply()
             wearingSensor.start()
             WatchStateStore.setStatus(this, "starting")
             val powerManager = getSystemService(PowerManager::class.java)
@@ -238,6 +240,26 @@ class MonitoringForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        internal fun restore(context: Context) {
+            if (!WatchStateStore.shouldRestore(context)) return
+            WatchStateStore.preferences(context).edit()
+                .putLong("last_restore_attempt_at", System.currentTimeMillis()).apply()
+            if (!hasPermissions(context)) {
+                WatchStateStore.setStatus(context, "permission_lost")
+                Log.w("GrandmaStartup", "Watch restore needs sensor permissions; open the app")
+                return
+            }
+            try {
+                // Unlike a user start, restoration must not turn an explicit stop back on.
+                ContextCompat.startForegroundService(context,
+                    Intent(context, MonitoringForegroundService::class.java))
+                Log.i("GrandmaStartup", "Watch monitoring restore requested")
+            } catch (_: Exception) {
+                WatchStateStore.setStatus(context, "error")
+                Log.w("GrandmaStartup", "Android rejected watch restore; open the app")
+            }
+        }
+
         fun start(context: Context) {
             WatchStateStore.setEnabled(context, true)
             ContextCompat.startForegroundService(context, Intent(context, MonitoringForegroundService::class.java))

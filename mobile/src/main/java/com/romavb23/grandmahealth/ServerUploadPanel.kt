@@ -128,7 +128,8 @@ internal fun ServerUploadPanel() {
             try { context.startActivity(Intent(Settings.ACTION_IGNORE_BATTERY_OPTIMIZATION_SETTINGS)) }
             catch (_: Exception) { message = "Откройте настройки батареи телефона вручную" }
         }) { Text("Настройки питания телефона") }
-        Text("После перезагрузки телефона пока нужно снова нажать «Сохранить и запустить».",
+        Text("Включённая передача восстанавливается после перезагрузки и первой разблокировки. " +
+            "Для Honor разрешите приложению автоматический запуск и работу в фоне в настройках питания.",
             style = MaterialTheme.typography.bodySmall)
     }
 }
