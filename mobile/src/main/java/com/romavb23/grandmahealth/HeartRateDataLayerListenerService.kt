@@ -22,9 +22,16 @@ class HeartRateDataLayerListenerService : WearableListenerService() {
     }
 
     override fun onMessageReceived(messageEvent: MessageEvent) {
-        if (messageEvent.path != WATCH_HEARTBEAT_PATH) return
+        if (messageEvent.path !in setOf(WATCH_HEARTBEAT_PATH, MEASUREMENT_RESPONSE_PATH)) return
+        if (messageEvent.data.size > 8192) return
         try {
             val data = DataMap.fromByteArray(messageEvent.data)
+            if (messageEvent.path == MEASUREMENT_RESPONSE_PATH) {
+                if (MeasurementRequests.receive(this, messageEvent.sourceNodeId, data)) {
+                    saveSnapshot(data, liveHeartbeat = true)
+                }
+                return
+            }
             val now = System.currentTimeMillis()
             if (!WatchFreshness.heartbeatIsTimely(data.getLong(WATCH_KEY_SENT_AT, 0L), now)) {
                 Log.w(LOG_TAG, "Heartbeat rejected: delayed packet or watch/phone clock mismatch")

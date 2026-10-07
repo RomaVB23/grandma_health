@@ -33,8 +33,12 @@ class MonitoringForegroundService : Service() {
     private val passiveClient by lazy { HealthServices.getClient(this).passiveMonitoringClient }
     private var started = false
     private var wakeLock: PowerManager.WakeLock? = null
+    private val spotMeasurement by lazy { SpotMeasurement(this, handler) }
     private val wearingSensor by lazy { WearingSensor(this) {
-        if (started) sendWatchHeartbeat(this)
+        if (started) {
+            spotMeasurement.onWearingChanged()
+            sendWatchHeartbeat(this)
+        }
     } }
 
     private val heartbeat = object : Runnable {
@@ -114,6 +118,7 @@ class MonitoringForegroundService : Service() {
                 startForeground(NOTIFICATION_ID, notification)
             }
             started = true
+            activeService = this
             WatchStateStore.preferences(this).edit()
                 .putLong("last_service_started_at", System.currentTimeMillis()).apply()
             wearingSensor.start()
@@ -217,6 +222,8 @@ class MonitoringForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        spotMeasurement.cancel()
+        if (activeService === this) activeService = null
         started = false
         wearingSensor.stop()
         handler.removeCallbacks(heartbeat)
@@ -240,6 +247,23 @@ class MonitoringForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
+        // Both assignment and dispatch run on the main thread. A remote command
+        // never starts a stopped service or overrides the user's monitoring choice.
+        private var activeService: MonitoringForegroundService? = null
+
+        internal fun requestMeasurement(context: Context, id: String, sourceNode: String) {
+            val app = context.applicationContext
+            Handler(Looper.getMainLooper()).post {
+                val service = activeService
+                when {
+                    service == null || !service.started || !WatchStateStore.isEnabled(app) ->
+                        sendMeasurementResponse(app, sourceNode, id, "monitoring_stopped")
+                    !hasPermissions(app) -> sendMeasurementResponse(app, sourceNode, id, "permission_lost")
+                    else -> service.spotMeasurement.request(id, sourceNode)
+                }
+            }
+        }
+
         internal fun restore(context: Context) {
             if (!WatchStateStore.shouldRestore(context)) return
             WatchStateStore.preferences(context).edit()

@@ -63,6 +63,10 @@
                     android:path="/watch/heartbeat"
                     android:scheme="wear" />
             </intent-filter>
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data android:host="*" android:path="/watch/measure/response" android:scheme="wear" />
+            </intent-filter>
         </service>
     </application>
 

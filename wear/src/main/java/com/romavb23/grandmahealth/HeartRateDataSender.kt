@@ -44,20 +44,7 @@ internal fun sendHeartRateToPhone(
 /** MessageClient doesn't queue offline packets: reception means a live exchange. */
 internal fun sendWatchHeartbeat(context: Context) {
     val app = context.applicationContext
-    val battery = app.getSystemService(BatteryManager::class.java)
-    val (bpm, measuredAt) = WatchStateStore.heartRate(app)
-    val message = DataMap().apply {
-        putLong("sent_at", System.currentTimeMillis())
-        putInt("bpm", bpm)
-        putLong("measured_at", measuredAt)
-        putInt("battery_percent", battery?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
-            ?.takeIf { it in 0..100 } ?: -1)
-        putBoolean("charging", battery?.isCharging == true)
-        putString("monitoring_status", WatchStateStore.status(app))
-        val (wearing, since) = WatchStateStore.wearing(app)
-        putString("wearing_state", wearing)
-        putLong("wearing_since_ms", since)
-    }.toByteArray()
+    val message = watchSnapshot(app).toByteArray()
     Wearable.getNodeClient(app).connectedNodes
         .addOnSuccessListener { nodes ->
             if (nodes.isEmpty()) Log.w(HEART_RATE_LOG_TAG, "Телефон не подключён; heartbeat не отправлен")
@@ -71,6 +58,25 @@ internal fun sendWatchHeartbeat(context: Context) {
         .addOnFailureListener { error ->
             Log.w(HEART_RATE_LOG_TAG, "Не удалось получить подключённые устройства", error)
         }
+}
+
+/** Reuse exactly the same battery, wearing and contact fields for live spot results. */
+internal fun watchSnapshot(context: Context): DataMap {
+    val app = context.applicationContext
+    val battery = app.getSystemService(BatteryManager::class.java)
+    val (bpm, measuredAt) = WatchStateStore.heartRate(app)
+    return DataMap().apply {
+        putLong("sent_at", System.currentTimeMillis())
+        putInt("bpm", bpm)
+        putLong("measured_at", measuredAt)
+        putInt("battery_percent", battery?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
+            ?.takeIf { it in 0..100 } ?: -1)
+        putBoolean("charging", battery?.isCharging == true)
+        putString("monitoring_status", WatchStateStore.status(app))
+        val (wearing, since) = WatchStateStore.wearing(app)
+        putString("wearing_state", wearing)
+        putLong("wearing_since_ms", since)
+    }
 }
 
 private const val HEART_RATE_PATH = "/heart-rate/latest"

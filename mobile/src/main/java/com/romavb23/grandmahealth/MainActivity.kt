@@ -18,7 +18,6 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalFocusManager
@@ -32,6 +31,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.romavb23.grandmahealth.ui.theme.GrandmaHealthTheme
 import com.romavb23.grandmahealth.ui.theme.HealthRed
+import com.romavb23.grandmahealth.ui.theme.StatusTone
+import com.romavb23.grandmahealth.ui.theme.batteryStatusTone
+import com.romavb23.grandmahealth.ui.theme.wearingStatusTone
+import com.romavb23.grandmahealth.ui.theme.statusColors
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -58,6 +61,7 @@ private fun GrandmaHealthApp() {
     var reading by remember { mutableStateOf(preferences.readHeartRate()) }
     var now by remember { mutableStateOf(System.currentTimeMillis()) }
     var nowElapsed by remember { mutableStateOf(SystemClock.elapsedRealtime()) }
+    var measurementRequest by remember(context) { mutableStateOf(MeasurementRequests.state(context)) }
     val bootCount = remember(context) { phoneBootCount(context) }
     var tab by remember { mutableStateOf(HealthTab.STATUS) }
     // Keep forms and their controller outside the selected tab: switching does
@@ -76,6 +80,7 @@ private fun GrandmaHealthApp() {
         while (true) {
             now = System.currentTimeMillis()
             nowElapsed = SystemClock.elapsedRealtime()
+            measurementRequest = MeasurementRequests.state(context)
             delay(1_000L)
         }
     }
@@ -98,7 +103,11 @@ private fun GrandmaHealthApp() {
         when (tab) {
             HealthTab.STATUS -> HeartRateContent(reading, now,
                 WatchFreshness.contactAgeMillis(reading.lastContactElapsed, reading.lastContactBootCount, bootCount, nowElapsed),
-                upload.state, Modifier.padding(innerPadding), onUpload = { tab = HealthTab.UPLOAD })
+                upload.state, measurementRequest, nowElapsed, Modifier.padding(innerPadding),
+                onUpload = { tab = HealthTab.UPLOAD }, onMeasurement = {
+                    MeasurementRequests.request(context)
+                    measurementRequest = MeasurementRequests.state(context)
+                })
             HealthTab.UPLOAD -> ServerUploadPanel(upload, Modifier.padding(innerPadding), onSettings = { tab = HealthTab.SETTINGS })
             HealthTab.SETTINGS -> ServerSettingsPanel(upload, Modifier.padding(innerPadding))
         }
@@ -125,18 +134,20 @@ private fun BrandHeader() {
 }
 
 @Composable
-internal fun HealthPanel(modifier: Modifier = Modifier, content: @Composable ColumnScope.() -> Unit) {
+internal fun HealthPanel(modifier: Modifier = Modifier, tone: StatusTone = StatusTone.NEUTRAL,
+    content: @Composable ColumnScope.() -> Unit) {
     Card(modifier = modifier.fillMaxWidth(), shape = RoundedCornerShape(22.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)) {
+        colors = CardDefaults.cardColors(containerColor = statusColors(tone).container,
+            contentColor = MaterialTheme.colorScheme.onSurface)) {
         Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(10.dp), content = content)
     }
 }
 
 @Composable
 internal fun HealthBadge(text: String, good: Boolean = false) {
+    val colors = statusColors(if (good) StatusTone.GREEN else StatusTone.AMBER)
     Surface(shape = RoundedCornerShape(10.dp),
-        color = if (good) Color(0xFFEAF6EF) else Color(0xFFFFF3DF),
-        contentColor = if (good) Color(0xFF28653F) else Color(0xFF805A18)) {
+        color = colors.container, contentColor = colors.value) {
         Text(text, style = MaterialTheme.typography.labelLarge, modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp))
     }
 }
@@ -144,11 +155,14 @@ internal fun HealthBadge(text: String, good: Boolean = false) {
 @Composable
 private fun HeartRateContent(
     reading: HeartRateReading, now: Long, contactAge: Long?, upload: UploadViewState,
-    modifier: Modifier = Modifier, onUpload: () -> Unit,
+    measurementRequest: MeasurementRequestState, nowElapsed: Long,
+    modifier: Modifier = Modifier, onUpload: () -> Unit, onMeasurement: () -> Unit,
 ) {
     val pulseStale = WatchFreshness.isMeasurementStale(reading.measuredAt, now)
     val contactRecent = WatchFreshness.isContactRecent(contactAge)
     val muted = MaterialTheme.colorScheme.onSurfaceVariant
+    val batteryTone = batteryStatusTone(reading.batteryPercent)
+    val wearingTone = wearingStatusTone(if (contactRecent) reading.wearingState else "unknown")
     Column(modifier.fillMaxSize().verticalScroll(rememberScrollState()).padding(horizontal = 20.dp, vertical = 10.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)) {
         HealthPanel {
@@ -166,6 +180,7 @@ private fun HeartRateContent(
                 style = MaterialTheme.typography.bodyMedium, color = muted)
             if (reading.measuredAt > 0L) Text("Прошло с измерения: " + formatAge((now - reading.measuredAt).coerceAtLeast(0L)),
                 style = MaterialTheme.typography.bodyMedium, color = muted)
+            MeasurementRequestPanel(measurementRequest, nowElapsed, onMeasurement)
         }
         HealthPanel {
             Text("Связь с часами", style = MaterialTheme.typography.titleMedium)
@@ -180,22 +195,29 @@ private fun HeartRateContent(
             contactAge?.let { Text("Прошло: " + formatAge(it), color = muted, style = MaterialTheme.typography.bodyMedium) }
         }
         Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-            HealthPanel(Modifier.weight(1f)) {
+            HealthPanel(Modifier.weight(1f), tone = batteryTone) {
                 Text("Заряд часов", style = MaterialTheme.typography.labelLarge, color = muted)
                 Text(if (reading.batteryPercent in 0..100) "${reading.batteryPercent}%" else "—",
-                    style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold)
+                    style = MaterialTheme.typography.headlineMedium, fontWeight = FontWeight.Bold,
+                    color = statusColors(batteryTone).value)
+                if (batteryTone != StatusTone.NEUTRAL) Text(when (batteryTone) {
+                    StatusTone.RED -> "Низкий заряд"
+                    StatusTone.AMBER -> "Средний заряд"
+                    else -> "Достаточный заряд"
+                }, style = MaterialTheme.typography.bodySmall, color = statusColors(batteryTone).value)
                 Text(if (reading.batteryPercent !in 0..100) "Ожидаем данные" else if (reading.charging) "Заряжаются" else "Без зарядки",
                     style = MaterialTheme.typography.bodySmall, color = muted)
                 if (!contactRecent && reading.batteryPercent in 0..100) Text("Последние данные", style = MaterialTheme.typography.bodySmall, color = muted)
             }
-            HealthPanel(Modifier.weight(1f)) {
+            HealthPanel(Modifier.weight(1f), tone = wearingTone) {
                 Text("Ношение", style = MaterialTheme.typography.labelLarge, color = muted)
                 Text(when {
                     !contactRecent -> "Нет данных"
                     reading.wearingState == "on" -> "На руке"
                     reading.wearingState == "off" -> "Сняты"
                     else -> "Неизвестно"
-                }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold)
+                }, style = MaterialTheme.typography.titleLarge, fontWeight = FontWeight.Bold,
+                    color = statusColors(wearingTone).value)
                 Text("По сигналу датчика", style = MaterialTheme.typography.bodySmall, color = muted)
             }
         }

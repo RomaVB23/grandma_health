@@ -10,3 +10,16 @@
 @media(min-width:701px) and (max-width:1100px){.status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
 
 .chart-panel{margin:0 0 24px;overflow:hidden}.chart-controls{padding:0 24px 16px;display:flex;align-items:flex-end;gap:14px;flex-wrap:wrap}.chart-controls label{display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--muted)}.chart-controls [hidden]{display:none}.chart-controls select{min-width:160px}.chart-controls input{max-width:230px}.chart-message{padding:0 24px 12px;font-size:12px;min-height:30px}.chart-plot{position:relative;margin:0 16px;min-height:300px;border-radius:8px;outline-offset:2px}.chart-plot:focus-visible{outline:3px solid #b8aff6}.chart-plot svg{display:block;overflow:visible}.chart-axis{font-size:11px;fill:var(--muted)}.chart-grid-line{stroke:#e5e9f1;stroke-width:1}.chart-gap-area{fill:#edf0f5}.chart-pulse-line{fill:none;stroke:var(--violet);stroke-width:2.3;stroke-linejoin:round;stroke-linecap:round;vector-effect:non-scaling-stroke}.chart-point{fill:var(--violet)}.chart-threshold-line{stroke:#b38b45;stroke-width:1;stroke-dasharray:5 5}.chart-threshold-label{font-size:10px;fill:#96712e}.chart-cursor{stroke:#a59be2;stroke-dasharray:3 4}.chart-selection{fill:var(--violet);stroke:white;stroke-width:2}.chart-empty{fill:var(--muted);font-size:14px}.chart-tooltip{position:absolute;pointer-events:none;background:#22283b;color:white;padding:9px 12px;border-radius:8px;font-size:12px;max-width:235px;box-shadow:0 5px 18px #15244120}.chart-tooltip[hidden]{display:none}.chart-legend{display:flex;flex-wrap:wrap;gap:12px 20px;padding:4px 24px 12px;font-size:11px;color:var(--muted)}.chart-legend>span{display:flex;align-items:center;gap:7px}.chart-legend i{width:18px;height:3px;background:var(--violet);display:inline-block}.chart-legend i.legend-gap{height:10px;background:#edf0f5;border:1px solid #dce1eb}.chart-note{padding:0 24px 20px;max-width:1100px}@media(max-width:700px){.chart-controls{padding:0 18px 14px;gap:10px}.chart-controls label{flex:1;min-width:140px}.chart-controls select,.chart-controls input{width:100%;max-width:none;min-width:0}.chart-message,.chart-legend{padding-left:18px;padding-right:18px}.chart-plot{margin:0 6px}.chart-note{padding:0 18px 18px}}
+
+
+/* The same quiet status palette as the mobile app. Unknown states stay neutral. */
+.status-card.tone-green{--status-ink:#24724f;background:#edf8f1;border-color:#d8ebdf}
+.status-card.tone-amber{--status-ink:#8a5a00;background:#fff8e7;border-color:#eee2bd}
+.status-card.tone-red{--status-ink:#b4233a;background:#fff0f2;border-color:#f0d4db}
+.status-card:is(.tone-green,.tone-amber,.tone-red) .card-value{color:var(--status-ink)}
+.status-card:is(.tone-green,.tone-amber,.tone-red) .card-value small{color:inherit}
+.status-card:is(.tone-green,.tone-amber,.tone-red) .card-label,.status-card:is(.tone-green,.tone-amber,.tone-red) p{color:#626e82}
+.status-card:is(.tone-green,.tone-amber,.tone-red) .card-label>span{color:var(--status-ink);opacity:.75}
+.pill.green{background:#edf8f1;color:#24724f}.pill.amber{background:#fff8e7;color:#8a5a00}.pill.red{background:#fff0f2;color:#b4233a}
+.status-level{margin:0 6px 6px 0}.status-text{font-weight:650}
+.status-text.green{color:#24724f}.status-text.amber{color:#8a5a00}.status-text.red{color:#b4233a}.status-text.neutral{color:var(--muted)}

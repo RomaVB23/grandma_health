@@ -36,6 +36,28 @@ class DashboardText
         return match ($state) { 'on' => 'На руке', 'off' => 'Сняты', default => 'Неизвестно' };
     }
 
+    public function batteryTone(?int $percent): string
+    {
+        return match (true) {
+            $percent === null || $percent < 0 || $percent > 100 => 'neutral',
+            $percent <= config('telegram.battery_low_percent') => 'red',
+            $percent < 60 => 'amber', default => 'green',
+        };
+    }
+
+    public function batteryLevel(?int $percent): string
+    {
+        return match ($this->batteryTone($percent)) {
+            'red' => 'Низкий заряд', 'amber' => 'Средний заряд',
+            'green' => 'Достаточный заряд', default => 'Нет данных о заряде',
+        };
+    }
+
+    public function wearingTone(string $state): string
+    {
+        return match ($state) { 'on' => 'green', 'off' => 'red', default => 'neutral' };
+    }
+
     public function pulseControl(string $state): string
     {
         return match ($state) { 'disabled' => 'Контроль выключен', 'out_of_range' => 'Вне заданного диапазона',
