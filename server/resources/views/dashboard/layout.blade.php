@@ -7,8 +7,9 @@
     <title>@yield('title', 'Grandma Health')</title>
     <link rel="icon" type="image/png" href="{{ asset('dashboard-assets/brand-photo.png') }}">
     <link rel="apple-touch-icon" href="{{ asset('dashboard-assets/brand-photo.png') }}">
-    <link rel="stylesheet" href="{{ asset('dashboard-assets/dashboard.css') }}">
-    <script src="{{ asset('dashboard-assets/dashboard.js') }}" defer></script>
+    <link rel="stylesheet" href="{{ asset('dashboard-assets/dashboard.css') }}?v={{ filemtime(public_path('dashboard-assets/dashboard.css')) }}">
+    <script src="{{ asset('dashboard-assets/dashboard.js') }}?v={{ filemtime(public_path('dashboard-assets/dashboard.js')) }}" defer></script>
+    <script src="{{ asset('dashboard-assets/pulse-chart.js') }}?v={{ filemtime(public_path('dashboard-assets/pulse-chart.js')) }}" defer></script>
 </head>
 <body>
 <div class="app-shell">

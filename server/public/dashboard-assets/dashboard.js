@@ -8,7 +8,8 @@
     toggle.addEventListener('change', () => {
         try { sessionStorage.setItem('grandma-history-refresh', toggle.checked ? 'on' : 'off'); } catch (_) {}
     });
-    document.querySelector('.filters')?.addEventListener('input', () => { edited = true; });
+    document.querySelectorAll('.filters, .chart-controls').forEach(form =>
+        form.addEventListener('input', () => { edited = true; }));
     setInterval(() => {
         if (toggle.checked && !edited && !document.hidden
             && !document.querySelector('details[open]') && !document.activeElement?.matches('.filters input, .filters select')) {

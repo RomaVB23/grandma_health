@@ -127,6 +127,67 @@ class DashboardTest extends TestCase
             ->assertViewHas('events', fn ($rows) => $rows->total() === 1 && $rows->first()->id === $first);
     }
 
+    public function test_chart_requires_dashboard_login_even_with_a_telemetry_token(): void
+    {
+        $this->event();
+        $this->get('/dashboard/pulse-chart')->assertRedirect('/login');
+        $this->withHeader('Authorization', 'Bearer test-token')->get('/dashboard/pulse-chart')->assertRedirect('/login');
+    }
+
+    public function test_chart_deduplicates_measurements_and_does_not_use_upload_times_or_table_filters(): void
+    {
+        $time = Carbon::parse('2026-10-06T12:00:00Z')->getTimestampMs();
+        $this->event(['source' => 'heartbeat']);
+        $this->event();
+        $this->event(['measured_at_ms' => $time + 60_000, 'bpm' => 80]);
+        $this->event(['measured_at_ms' => $time - 2 * 86_400_000, 'bpm' => 40]);
+        $this->event(['measured_at_ms' => null, 'bpm' => null, 'source' => 'heartbeat']);
+        $this->event(['device_id' => 'other-watch', 'bpm' => 999]);
+        $this->signedIn()->getJson('/dashboard/pulse-chart?period=24h&mode=events&source=measurement&page=2')
+            ->assertOk()->assertJsonPath('points', [[$time, 72], [$time + 60_000, 80]])
+            ->assertJsonPath('timezone', 'Europe/Minsk')->assertJsonPath('gap_ms', 600_000)
+            ->assertJsonPath('thresholds', ['lower' => 60, 'upper' => 85, 'enabled' => false])
+            ->assertHeader('Cache-Control', 'max-age=0, no-store, private');
+    }
+
+    public function test_chart_custom_period_uses_minsk_time_and_preserves_interval_endpoints(): void
+    {
+        $start = Carbon::parse('2026-10-06T00:00:00+03:00')->getTimestampMs();
+        $end = $start + 60_000;
+        $this->event(['measured_at_ms' => $start - 1]);
+        $this->event(['measured_at_ms' => $start, 'bpm' => 60]);
+        $this->event(['measured_at_ms' => $end, 'bpm' => 85]);
+        $this->event(['measured_at_ms' => $end + 1]);
+        $this->signedIn()->getJson('/dashboard/pulse-chart?period=custom&from=2026-10-06T00:00&to=2026-10-06T00:01&gap_minutes=5')
+            ->assertOk()->assertJsonPath('from_ms', $start)->assertJsonPath('to_ms', $end)
+            ->assertJsonPath('points', [[$start, 60], [$end, 85]])->assertJsonPath('gap_ms', 300_000);
+    }
+
+    public function test_chart_hour_window_excludes_future_and_older_measurements(): void
+    {
+        $now = now()->getTimestampMs();
+        $this->event(['measured_at_ms' => $now - 3_600_001]);
+        $this->event(['measured_at_ms' => $now - 3_600_000, 'bpm' => 61]);
+        $this->event(['measured_at_ms' => $now, 'bpm' => 75]);
+        $this->event(['measured_at_ms' => $now + 1]);
+        $this->signedIn()->getJson('/dashboard/pulse-chart?period=1h')->assertOk()
+            ->assertJsonPath('points', [[$now - 3_600_000, 61], [$now, 75]]);
+        $this->getJson('/dashboard/pulse-chart?period=custom&from=2026-10-06T16:00&to=2026-10-06T18:00')
+            ->assertOk()->assertJsonPath('to_ms', $now)->assertJsonCount(2, 'points');
+    }
+
+    public function test_chart_rejects_invalid_or_unbounded_periods(): void
+    {
+        $this->signedIn();
+        foreach (['period=all', 'gap_minutes=0', 'gap_minutes=61', 'period=custom',
+            'period=custom&from=2026-02-30T12:00&to=2026-03-01T12:00',
+            'period=custom&from=2026-10-06T12:00&to=2026-10-06T11:00',
+            'period=custom&from=2026-01-01T00:00&to=2026-10-06T12:00',
+            'period=custom&from=2026-10-07T00:00&to=2026-10-07T01:00'] as $query) {
+            $this->getJson('/dashboard/pulse-chart?'.$query)->assertUnprocessable();
+        }
+    }
+
     public function test_date_filters_use_minsk_midnight_and_inclusive_end_date(): void
     {
         $start = Carbon::parse('2026-10-05T21:00:00Z')->getTimestampMs();

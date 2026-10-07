@@ -20,6 +20,8 @@
 <p class="control-note">{{ $text->pulseControl($status['pulse_control_status']) }} · границы {{ $status['pulse_lower'] }}–{{ $status['pulse_upper'] }} уд/мин. <a class="text-link" href="{{ route('dashboard.monitoring') }}">Настроить</a></p>
 <p class="snapshot-note">Состояние на {{ $text->time($status['server_time_ms']) }} · {{ $timezone }}. Свежая связь не означает новое измерение пульса.</p>
 
+@include('dashboard.pulse-chart')
+
 <section class="panel history-panel">
     <div class="history-heading"><div><h2>Журнал показаний</h2><p class="muted">{{ $filters['mode'] === 'measurements' ? 'Один замер — одна строка, даже при повторной передаче.' : 'Все сохранённые пакеты, включая heartbeat с последним известным пульсом.' }}</p></div><span class="count-label">{{ number_format($events->total(), 0, ',', ' ') }} {{ $filters['mode'] === 'measurements' ? 'замеров' : 'событий' }}</span></div>
     <nav class="tabs" aria-label="Режим истории">
