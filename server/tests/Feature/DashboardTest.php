@@ -276,4 +276,76 @@ class DashboardTest extends TestCase
         $this->assertTrue(password_verify(self::PASSWORD, $saved));
         $this->assertStringNotContainsString(self::PASSWORD, file_get_contents($this->passwordFile));
     }
+
+    public function test_period_report_counts_distinct_samples_and_measures_gaps_in_measurement_time(): void
+    {
+        $start = Carbon::parse('2026-10-06T12:00:00Z')->getTimestampMs();
+        foreach ([[1, 72], [6, 80], [20, 64]] as [$minute, $bpm]) {
+            $this->event(['measured_at_ms' => $start + $minute * 60_000, 'bpm' => $bpm, 'battery_percent' => null]);
+        }
+        $this->event(['source' => 'heartbeat', 'measured_at_ms' => $start + 60_000, 'battery_percent' => null]);
+        $this->event(['device_id' => 'other-watch', 'bpm' => 200]);
+        $this->event(['measured_at_ms' => $start - 1, 'bpm' => 10, 'battery_percent' => null]);
+        $this->event(['measured_at_ms' => $start + 30 * 60_000 + 1, 'bpm' => 250, 'battery_percent' => null]);
+        $this->signedIn()->getJson('/dashboard/pulse-chart?period=custom&from=2026-10-06T15:00&to=2026-10-06T15:30&gap_minutes=5')
+            ->assertOk()->assertJsonPath('report.pulse', ['count' => 3, 'min_bpm' => 64, 'max_bpm' => 80,
+                'mean_bpm' => 72, 'first_at_ms' => $start + 60_000, 'last_at_ms' => $start + 20 * 60_000])
+            ->assertJsonPath('report.intervals', ['mean_ms' => 570_000, 'max_ms' => 840_000,
+                'max_from_ms' => $start + 6 * 60_000, 'max_to_ms' => $start + 20 * 60_000, 'long_gap_count' => 1])
+            ->assertJsonPath('report.edges', ['before_first_ms' => 60_000, 'after_last_ms' => 600_000]);
+        // Changing the graph's gap threshold changes only the long-pause count.
+        $this->getJson('/dashboard/pulse-chart?period=custom&from=2026-10-06T15:00&to=2026-10-06T15:30&gap_minutes=15')
+            ->assertOk()->assertJsonPath('report.intervals.long_gap_count', 0)->assertJsonPath('report.intervals.max_ms', 840_000);
+    }
+
+    public function test_period_report_empty_and_single_sample_do_not_invent_intervals_or_battery_consumption(): void
+    {
+        $url = '/dashboard/pulse-chart?period=custom&from=2026-10-06T15:00&to=2026-10-06T15:30';
+        $this->signedIn()->getJson($url)->assertOk()->assertJsonPath('report.pulse.count', 0)
+            ->assertJsonPath('report.pulse.mean_bpm', null)->assertJsonPath('report.intervals.mean_ms', null)
+            ->assertJsonPath('report.intervals.max_ms', null)->assertJsonPath('report.edges.before_first_ms', 1_800_000)
+            ->assertJsonPath('report.edges.after_last_ms', null)->assertJsonPath('report.battery.first', null)
+            ->assertJsonPath('report.battery.delta_pp', null)->assertJsonPath('report.battery.charging_observed', null);
+        $start = Carbon::parse('2026-10-06T12:00:00Z')->getTimestampMs();
+        $this->event(['measured_at_ms' => $start + 10 * 60_000, 'watch_sent_at_ms' => $start + 11 * 60_000]);
+        $this->getJson($url)->assertOk()->assertJsonPath('report.pulse.count', 1)
+            ->assertJsonPath('report.intervals.mean_ms', null)->assertJsonPath('report.intervals.max_ms', null)
+            ->assertJsonPath('report.intervals.long_gap_count', 0)
+            ->assertJsonPath('report.edges', ['before_first_ms' => 600_000, 'after_last_ms' => 1_200_000])
+            ->assertJsonPath('report.battery.snapshot_count', 1)->assertJsonPath('report.battery.delta_pp', null)
+            ->assertJsonPath('report.battery.charging_observed', false);
+    }
+
+    public function test_period_report_battery_uses_snapshot_time_including_packets_without_pulse_and_charge_sessions(): void
+    {
+        $start = Carbon::parse('2026-10-06T12:00:00Z')->getTimestampMs();
+        foreach ([[1, 90, false], [10, 100, true], [25, 82, false]] as [$minute, $percent, $charging]) {
+            $this->event(['watch_sent_at_ms' => $start + $minute * 60_000, 'battery_percent' => $percent,
+                'charging' => $charging, 'measured_at_ms' => null, 'bpm' => null, 'source' => 'heartbeat']);
+        }
+        // Snapshot duplicates do not inflate the number of observations.
+        $this->event(['watch_sent_at_ms' => $start + 60_000, 'battery_percent' => 90]);
+        // Earlier snapshot uploaded inside this period is not a current battery sample.
+        $this->event(['watch_sent_at_ms' => $start - 1, 'battery_percent' => 5]);
+        $this->event(['watch_sent_at_ms' => $start + 30 * 60_000 + 1, 'battery_percent' => 1]);
+        $this->event(['device_id' => 'other-watch', 'battery_percent' => 0]);
+        $this->event(['battery_percent' => null]);
+        $this->signedIn()->getJson('/dashboard/pulse-chart?period=custom&from=2026-10-06T15:00&to=2026-10-06T15:30')
+            ->assertOk()->assertJsonPath('report.battery', ['snapshot_count' => 3,
+                'first' => ['at_ms' => $start + 60_000, 'percent' => 90],
+                'last' => ['at_ms' => $start + 25 * 60_000, 'percent' => 82],
+                'delta_pp' => -8, 'charging_observed' => true]);
+    }
+
+    public function test_period_report_preserves_full_charge_zero_charge_and_positive_net_change(): void
+    {
+        $start = Carbon::parse('2026-10-06T12:00:00Z')->getTimestampMs();
+        $this->event(['watch_sent_at_ms' => $start, 'battery_percent' => 0, 'charging' => true]);
+        $this->event(['watch_sent_at_ms' => $start + 60_000, 'battery_percent' => 100]);
+        $this->signedIn()->getJson('/dashboard/pulse-chart?period=custom&from=2026-10-06T15:00&to=2026-10-06T15:01')
+            ->assertOk()->assertJsonPath('report.battery.snapshot_count', 2)
+            ->assertJsonPath('report.battery.first.percent', 0)->assertJsonPath('report.battery.last.percent', 100)
+            ->assertJsonPath('report.battery.delta_pp', 100)->assertJsonPath('report.battery.charging_observed', true);
+    }
+
 }

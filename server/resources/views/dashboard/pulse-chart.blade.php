@@ -14,5 +14,6 @@
     </div>
     <div class="chart-legend"><span><i class="legend-pulse"></i>Измеренный пульс</span><span><i class="legend-gap"></i>Длительная пауза без замеров</span><span id="chart-thresholds"></span></div>
     <p class="small muted chart-note">Линия соединяет отдельные замеры, а не непрерывное измерение. Разрывы относятся к отсутствию замеров пульса, а не обязательно к потере связи. Границы взяты из настроек контроля. Наведите на график или используйте стрелки клавиатуры.</p>
+    @include('dashboard.period-report')
     <noscript><p class="notice">Для графика включите JavaScript. Таблица замеров доступна ниже.</p></noscript>
 </section>

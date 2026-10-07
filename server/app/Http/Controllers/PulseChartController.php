@@ -4,6 +4,7 @@ namespace App\Http\Controllers;
 
 use App\Services\MonitoringSettings;
 use App\Services\WatchHistory;
+use App\Services\WatchPeriodReport;
 use Carbon\CarbonImmutable;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
@@ -12,7 +13,7 @@ use Illuminate\Validation\ValidationException;
 
 class PulseChartController
 {
-    public function __invoke(Request $request, WatchHistory $history, MonitoringSettings $settings): JsonResponse
+    public function __invoke(Request $request, WatchHistory $history, MonitoringSettings $settings, WatchPeriodReport $report): JsonResponse
     {
         $data = $request->validate([
             'period' => ['sometimes', Rule::in(['1h', '6h', '24h', 'custom'])],
@@ -51,12 +52,15 @@ class PulseChartController
             throw ValidationException::withMessages(['period' => 'Слишком много замеров для одного графика. Выберите более короткий период.']);
         }
         $rules = $settings->get();
+        $points = $rows->map(fn ($row) => [(int) $row->measured_at_ms, (int) $row->bpm])->all();
+        $gap = (int) ($data['gap_minutes'] ?? 10) * 60_000;
         return response()->json([
             'timezone' => $timezone, 'from_ms' => $start, 'to_ms' => $end,
-            'gap_ms' => (int) ($data['gap_minutes'] ?? 10) * 60_000,
+            'gap_ms' => $gap,
             'thresholds' => ['lower' => (int) $rules->pulse_lower, 'upper' => (int) $rules->pulse_upper,
                 'enabled' => (bool) $rules->pulse_enabled],
-            'points' => $rows->map(fn ($row) => [(int) $row->measured_at_ms, (int) $row->bpm])->all(),
+            'points' => $points,
+            'report' => $report->build($points, $start, $end, $gap),
         ]);
     }
 }

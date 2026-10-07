@@ -55,6 +55,48 @@
         if (!data.points.length) return `За выбранный период замеров нет · ${data.timezone}`;
         return `${data.points.length} уникальных замеров · ${fullTime(data.from_ms)} — ${fullTime(data.to_ms)} · ${data.timezone}`;
     }
+    function duration(ms) {
+        if (ms === null || ms === undefined) return '—';
+        let seconds = Math.ceil(ms / 1000);
+        const days = Math.floor(seconds / 86400); seconds %= 86400;
+        const hours = Math.floor(seconds / 3600); seconds %= 3600;
+        const minutes = Math.floor(seconds / 60); seconds %= 60;
+        return [days ? `${days} д` : '', hours ? `${hours} ч` : '', minutes ? `${minutes} мин` : '',
+            seconds || (!days && !hours && !minutes) ? `${seconds} с` : ''].filter(Boolean).join(' ');
+    }
+    function renderReport() {
+        const report = data.report;
+        const text = (id, value) => {document.getElementById(id).textContent = value;};
+        const number = value => new Intl.NumberFormat('ru-RU', {maximumFractionDigits: 1}).format(value);
+        text('report-period', `${fullTime(data.from_ms)} — ${fullTime(data.to_ms)} · ${data.timezone}`);
+        text('report-count', number(report.pulse.count));
+        text('report-pulse', report.pulse.count
+            ? `Пульс: ${report.pulse.min_bpm}–${report.pulse.max_bpm} · средний ${number(report.pulse.mean_bpm)} уд/мин`
+            : 'За выбранный период замеров нет');
+        text('report-mean-gap', duration(report.intervals.mean_ms));
+        text('report-max-gap', duration(report.intervals.max_ms));
+        document.getElementById('report-max-gap').classList.toggle('gap-emphasis', report.intervals.max_ms > data.gap_ms);
+        text('report-max-range', report.intervals.max_ms !== null
+            ? `${fullTime(report.intervals.max_from_ms)} — ${fullTime(report.intervals.max_to_ms)}`
+            : 'Нужно хотя бы два замера');
+        text('report-sample-range', report.pulse.count
+            ? `${fullTime(report.pulse.first_at_ms)} — ${fullTime(report.pulse.last_at_ms)}` : 'Нет замеров');
+        text('report-long-gaps', `${report.intervals.long_gap_count} · больше ${duration(data.gap_ms)}`);
+        text('report-edges', report.pulse.count
+            ? `${duration(report.edges.before_first_ms)} / ${duration(report.edges.after_last_ms)}`
+            : `Весь период без замеров: ${duration(report.edges.before_first_ms)}`);
+        const battery = report.battery;
+        text('report-battery-change', battery.delta_pp === null ? '—'
+            : `${battery.delta_pp > 0 ? '+' : battery.delta_pp < 0 ? '−' : ''}${Math.abs(battery.delta_pp)} п.п.`);
+        text('report-battery-summary', battery.snapshot_count > 1
+            ? `${battery.first.percent}% → ${battery.last.percent}% · ${number(battery.snapshot_count)} снимков`
+            : battery.snapshot_count === 1 ? 'Только один снимок: изменение неизвестно' : 'Нет снимков заряда за период');
+        text('report-battery-range', battery.snapshot_count
+            ? `${battery.first.percent}% (${fullTime(battery.first.at_ms)}) → ${battery.last.percent}% (${fullTime(battery.last.at_ms)})`
+            : 'Нет данных');
+        text('report-charging', battery.charging_observed === null ? 'Нет данных'
+            : battery.charging_observed ? 'Есть снимки со статусом «Заряжаются»' : 'В сохранённых снимках зарядка не зафиксирована');
+    }
     function render() {
         if (!data) return;
         svg.replaceChildren();
@@ -162,6 +204,7 @@
         if (period.value === 'custom') {url.searchParams.set('from', from.value); url.searchParams.set('to', to.value);}
         message.textContent = 'Обновляем график…';
         plot.setAttribute('aria-busy', 'true');
+        document.getElementById('period-report').setAttribute('aria-busy', 'true');
         try {
             const response = await fetch(url, {headers: {'Accept': 'application/json'}, credentials: 'same-origin',
                 cache: 'no-store', signal: current.signal});
@@ -174,13 +217,19 @@
             thresholds.textContent = `Границы ${data.thresholds.lower}–${data.thresholds.upper} уд/мин · контроль ${data.thresholds.enabled ? 'включён' : 'отключён'}`;
             if (!from.value) from.value = localInput(new Date(data.from_ms), data.timezone);
             if (!to.value) to.value = localInput(new Date(data.to_ms), data.timezone);
-            render();
+            render(); renderReport();
         } catch (error) {
             if (error.name === 'AbortError') return;
-            message.textContent = `${error.message || 'Не удалось загрузить график.'}${data ? ' На графике остались ранее загруженные данные.' : ''}`;
+            message.textContent = `${error.message || 'Не удалось загрузить график.'}${data ? ' На графике и в отчёте остались ранее загруженные данные.' : ''}`;
             if (!data) count.textContent = 'Нет данных';
+            document.getElementById('report-period').textContent = data
+                ? `Отчёт не обновился. Показан период: ${fullTime(data.from_ms)} — ${fullTime(data.to_ms)} · ${data.timezone}`
+                : 'Не удалось загрузить отчёт. Нажмите «Показать», чтобы повторить.';
         } finally {
-            if (controller === current) plot.setAttribute('aria-busy', 'false');
+            if (controller === current) {
+                plot.setAttribute('aria-busy', 'false');
+                document.getElementById('period-report').setAttribute('aria-busy', 'false');
+            }
         }
     }
     period.addEventListener('change', () => {showCustom(); draft = true; if (period.value !== 'custom') load();});
