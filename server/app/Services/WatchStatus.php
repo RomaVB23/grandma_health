@@ -18,6 +18,7 @@ class WatchStatus
         $contact = $query()->where('live_contact', true)->orderByDesc('received_at_ms')->orderByDesc('id')->first();
         $wearing = $query()->where('live_contact', true)->orderByDesc('watch_sent_at_ms')->orderByDesc('id')->first();
         $upload = $query()->orderByDesc('id')->first();
+        $phone = DB::table('phone_status')->where('device_id', $device)->first();
         $pulseAge = $pulse ? max(0, $now - $pulse->measured_at_ms) : null;
         $contactAge = $contact ? max(0, $now - $contact->received_at_ms) : null;
 
@@ -42,11 +43,23 @@ class WatchStatus
             'last_known_wearing_state' => $wearing?->wearing_state ?? 'unknown',
             'wearing_since_ms' => $wearing?->wearing_since_ms,
             'wearing_reported_at_ms' => $wearing?->watch_sent_at_ms,
+            'phone_battery_percent' => $phone?->battery_percent,
+            'phone_charging' => $phone ? (bool) $phone->charging : null,
+            'phone_snapshot_at_ms' => $phone?->snapshot_at_ms,
+            'phone_last_upload_at_ms' => $phone?->server_received_at_ms,
+            'phone_battery_stale' => !$phone
+                || $phone->snapshot_at_ms > $now + config('telemetry.clock_tolerance_ms')
+                || $now - $phone->snapshot_at_ms >= config('telegram.battery_fresh_ms')
+                || $now - $phone->server_received_at_ms >= config('telegram.battery_fresh_ms'),
         ];
-        $rules = app(MonitoringSettings::class)->get();
+        $rules = app(MonitoringSettings::class)->effective($now);
         $eligible = $pulse !== null && MonitoringEligibility::pulse($pulse, $s, $rules, $now);
         return $s + ['pulse_control_enabled' => (bool) $rules->pulse_enabled, 'pulse_lower' => $rules->pulse_lower,
             'pulse_upper' => $rules->pulse_upper, 'pulse_eligible' => $eligible,
+            'pulse_profile' => $rules->effective_profile, 'pulse_mode' => $rules->effective_mode,
+            'pulse_next_switch_at_ms' => $rules->profile_until_ms,
+            'pulse_override_until_ms' => $rules->effective_override_until_ms,
+            'pulse_profile_timezone' => $rules->profile_timezone,
             'pulse_control_status' => !$rules->pulse_enabled ? 'disabled' : (!$eligible ? 'no_current_measurement'
                 : (MonitoringEligibility::outside($pulse->bpm, $rules) ? 'out_of_range' : 'in_range'))];
     }

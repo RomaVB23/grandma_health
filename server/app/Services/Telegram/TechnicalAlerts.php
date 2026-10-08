@@ -38,6 +38,14 @@ class TechnicalAlerts
                     '🔋 Низкий заряд часов: '.$s['battery_percent'].'%. Поставьте часы на зарядку.',
                     '✅ Часы заряжаются или заряд восстановился до 25% и выше.');
             }
+            if (($s['phone_battery_percent'] ?? null) !== null && !($s['phone_battery_stale'] ?? true)) {
+                $wasLow = (bool) DB::table('telegram_alerts')->where('kind', 'phone_battery')->value('active');
+                $low = !$s['phone_charging'] && $s['phone_battery_percent'] < ($wasLow
+                    ? config('telegram.battery_recovered_percent') : config('telegram.battery_low_percent') + 1);
+                $this->update('phone_battery', $low,
+                    '📱 Низкий заряд телефона: '.$s['phone_battery_percent'].'%. Поставьте Honor на зарядку: он передаёт данные с часов на сервер.',
+                    '✅ Телефон заряжается или заряд восстановился до '.config('telegram.battery_recovered_percent').'% и выше.');
+            }
         }, 5);
     }
 

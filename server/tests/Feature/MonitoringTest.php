@@ -250,6 +250,8 @@ class MonitoringTest extends TestCase
     private function form(array $changes = []): array
     {
         return array_replace(['pulse_enabled' => 1, 'pulse_lower' => 60, 'pulse_upper' => 85,
+            'night_pulse_lower' => 60, 'night_pulse_upper' => 85, 'night_start' => '23:00', 'night_end' => '08:00',
+            'profile_timezone' => 'Europe/Minsk',
             'confirmation_samples' => 1, 'pulse_max_age_seconds' => 300, 'confirmation_gap_minutes' => 15, 'wearing_enabled' => 1,
             'off_wrist_minutes' => 10, 'version' => 0], $changes);
     }

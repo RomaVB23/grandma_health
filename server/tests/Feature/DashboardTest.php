@@ -63,6 +63,23 @@ class DashboardTest extends TestCase
         $this->assertSame($r['id'], $again['id']);
     }
 
+    public function test_phone_battery_card_shows_charge_charging_and_staleness_separately_from_watch(): void
+    {
+        $this->signedIn()->get('/dashboard')->assertOk()->assertSee('Заряд телефона')->assertSee('Ожидаем Honor');
+        DB::table('phone_status')->insert(['device_id' => 'grandma-watch', 'battery_percent' => 15,
+            'charging' => true, 'snapshot_at_ms' => now()->getTimestampMs(), 'server_received_at_ms' => now()->getTimestampMs()]);
+        $html = $this->signedIn()->get('/dashboard')->assertOk()->getContent();
+        preg_match('/<section id="phone-battery"(.*?)<\/section>/s', $html, $card);
+        $this->assertStringContainsString('tone-red', $card[1]);
+        $this->assertStringContainsString('Заряжается', $card[1]);
+        $this->assertStringContainsString('15<small>%</small>', $card[1]);
+        Carbon::setTestNow(Carbon::now()->addMinutes(10));
+        $html = $this->signedIn()->get('/dashboard')->assertOk()->getContent();
+        preg_match('/<section id="phone-battery"(.*?)<\/section>/s', $html, $card);
+        $this->assertStringContainsString('tone-neutral', $card[1]);
+        $this->assertStringContainsString('Данные устарели', $card[1]);
+    }
+
     public function test_guests_cannot_read_history_even_with_a_telemetry_bearer(): void
     {
         $this->event();

@@ -214,7 +214,8 @@
             data = result; selection = -1; draft = false;
             count.textContent = `${data.points.length} замеров`;
             message.textContent = description();
-            thresholds.textContent = `Границы ${data.thresholds.lower}–${data.thresholds.upper} уд/мин · контроль ${data.thresholds.enabled ? 'включён' : 'отключён'}`;
+            const profile = data.threshold_profile === 'night' ? 'Ночной' : 'Дневной';
+            thresholds.textContent = `Текущие границы: ${profile} · ${data.thresholds.lower}–${data.thresholds.upper} уд/мин · контроль ${data.thresholds.enabled ? 'включён' : 'отключён'}`;
             if (!from.value) from.value = localInput(new Date(data.from_ms), data.timezone);
             if (!to.value) to.value = localInput(new Date(data.to_ms), data.timezone);
             render(); renderReport();

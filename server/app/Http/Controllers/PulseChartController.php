@@ -51,7 +51,7 @@ class PulseChartController
         if ($rows->count() > 20_000) {
             throw ValidationException::withMessages(['period' => 'Слишком много замеров для одного графика. Выберите более короткий период.']);
         }
-        $rules = $settings->get();
+        $rules = $settings->effective($now->getTimestampMs());
         $points = $rows->map(fn ($row) => [(int) $row->measured_at_ms, (int) $row->bpm])->all();
         $gap = (int) ($data['gap_minutes'] ?? 10) * 60_000;
         return response()->json([
@@ -59,6 +59,7 @@ class PulseChartController
             'gap_ms' => $gap,
             'thresholds' => ['lower' => (int) $rules->pulse_lower, 'upper' => (int) $rules->pulse_upper,
                 'enabled' => (bool) $rules->pulse_enabled],
+            'threshold_profile' => $rules->effective_profile, 'threshold_mode' => $rules->effective_mode,
             'points' => $points,
             'report' => $report->build($points, $start, $end, $gap),
         ]);

@@ -1,12 +1,17 @@
 package com.romavb23.grandmahealth.presentation
 
 import android.Manifest
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.content.SharedPreferences
+import android.os.PowerManager
 import android.os.SystemClock
 import android.content.pm.PackageManager
 import android.os.Build
 import android.os.Bundle
+import android.util.Log
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
@@ -140,29 +145,92 @@ private fun HeartRateApp() {
             permissionLauncher.launch(heartRatePermission())
             onDispose { }
         } else {
+            val lifecycle = (context as? ComponentActivity)?.lifecycle
+            val powerManager = context.getSystemService(PowerManager::class.java)
+            val mainExecutor = ContextCompat.getMainExecutor(context)
             var lastSentAt = 0L
-            val callback =
-                createHeartRateCallback(
-                    onBpm = { measuredBpm, measuredAt ->
-                        bpm = measuredBpm
+            var disposed = false
+            fun screenIsActive(): Boolean = !disposed &&
+                lifecycle?.currentState?.isAtLeast(Lifecycle.State.RESUMED) == true &&
+                powerManager.isInteractive
 
-                        if (measuredAt - lastSentAt >= HEART_RATE_SEND_INTERVAL_MS) {
-                            lastSentAt = measuredAt
-                            sendHeartRateToPhone(
-                                context = context,
-                                bpm = measuredBpm,
-                                measuredAt = measuredAt,
-                            )
+            val controller = ScreenMeasurementController<MeasureCallback>(
+                createCallback = { isActive, onRegistered ->
+                    createHeartRateCallback(
+                        isActive = { isActive() && screenIsActive() },
+                        onRegistered = onRegistered,
+                        onBpm = { measuredBpm, measuredAt ->
+                            bpm = measuredBpm
+                            if (measuredAt - lastSentAt >= HEART_RATE_SEND_INTERVAL_MS) {
+                                lastSentAt = measuredAt
+                                sendHeartRateToPhone(
+                                    context = context,
+                                    bpm = measuredBpm,
+                                    measuredAt = measuredAt,
+                                )
+                            }
+                        },
+                        onStatus = { status = it },
+                    )
+                },
+                register = { callback ->
+                    status = "Подключаем датчик…"
+                    Log.i(SCREEN_MEASUREMENT_TAG, "Screen HR register requested")
+                    measureClient.registerMeasureCallback(DataType.HEART_RATE_BPM, callback)
+                },
+                unregister = { callback, complete ->
+                    Log.i(SCREEN_MEASUREMENT_TAG, "Screen HR unregister requested")
+                    val future = measureClient.unregisterMeasureCallbackAsync(
+                        DataType.HEART_RATE_BPM, callback,
+                    )
+                    future.addListener({
+                        val error = runCatching { future.get() }.exceptionOrNull()
+                        if (error == null) {
+                            Log.i(SCREEN_MEASUREMENT_TAG, "Screen HR unregistered")
                         }
-                    },
-                    onStatus = { status = it },
-                )
-
-            status = "Подключаем датчик…"
-            measureClient.registerMeasureCallback(DataType.HEART_RATE_BPM, callback)
+                        complete(error)
+                    }, mainExecutor)
+                },
+                onError = { error ->
+                    Log.e(SCREEN_MEASUREMENT_TAG, "Screen HR subscription error", error)
+                    if (screenIsActive()) status = "Ошибка подключения датчика"
+                },
+            )
+            fun updateScreenMeasurement() {
+                val active = screenIsActive()
+                if (!active) status = "Измерение экрана приостановлено"
+                controller.setActive(active)
+            }
+            val observer = LifecycleEventObserver { _, _ -> updateScreenMeasurement() }
+            // On Wear OS the activity may remain visible in ambient mode. Observe
+            // interactive state as well as lifecycle; never wake the screen ourselves.
+            val screenReceiver = object : BroadcastReceiver() {
+                override fun onReceive(context: Context?, intent: Intent?) {
+                    if (intent?.action == Intent.ACTION_SCREEN_OFF) {
+                        status = "Измерение экрана приостановлено"
+                        controller.setActive(false)
+                    } else {
+                        updateScreenMeasurement()
+                    }
+                }
+            }
+            val filter = IntentFilter().apply {
+                addAction(Intent.ACTION_SCREEN_ON)
+                addAction(Intent.ACTION_SCREEN_OFF)
+            }
+            if (Build.VERSION.SDK_INT >= 33) {
+                context.registerReceiver(screenReceiver, filter, Context.RECEIVER_NOT_EXPORTED)
+            } else {
+                context.registerReceiver(screenReceiver, filter)
+            }
+            lifecycle?.addObserver(observer)
+            updateScreenMeasurement()
 
             onDispose {
-                measureClient.unregisterMeasureCallbackAsync(DataType.HEART_RATE_BPM, callback)
+                disposed = true
+                lifecycle?.removeObserver(observer)
+                context.unregisterReceiver(screenReceiver)
+                controller.close()
             }
         }
     }
@@ -293,23 +361,28 @@ private fun HeartRateScreen(
 }
 
 private fun createHeartRateCallback(
+    isActive: () -> Boolean,
+    onRegistered: () -> Unit,
     onBpm: (Int, Long) -> Unit,
     onStatus: (String) -> Unit,
 ): MeasureCallback =
     object : MeasureCallback {
         override fun onRegistered() {
-            onStatus("Ожидаем измерение…")
+            onRegistered.invoke()
+            Log.i(SCREEN_MEASUREMENT_TAG, "Screen HR registration acknowledged; active=${isActive()}")
+            if (isActive()) onStatus("Ожидаем измерение…")
         }
 
         override fun onRegistrationFailed(throwable: Throwable) {
-            onStatus("Ошибка датчика: ${throwable.message ?: "неизвестная"}")
+            Log.e(SCREEN_MEASUREMENT_TAG, "Screen HR registration failed", throwable)
+            if (isActive()) onStatus("Ошибка датчика: ${throwable.message ?: "неизвестная"}")
         }
 
         override fun onAvailabilityChanged(
             dataType: DeltaDataType<*, *>,
             availability: Availability,
         ) {
-            if (dataType != DataType.HEART_RATE_BPM) return
+            if (!isActive() || dataType != DataType.HEART_RATE_BPM) return
 
             onStatus(
                 if (availability == DataTypeAvailability.AVAILABLE) {
@@ -321,6 +394,7 @@ private fun createHeartRateCallback(
         }
 
         override fun onDataReceived(data: DataPointContainer) {
+            if (!isActive()) return
             val latestHeartRate = data.getData(DataType.HEART_RATE_BPM)
                 .maxByOrNull { it.timeDurationFromBoot } ?: return
             if (!latestHeartRate.value.isFinite()) return
@@ -386,6 +460,7 @@ private const val READ_HEART_RATE_PERMISSION = "android.permission.health.READ_H
 private const val READ_HEALTH_DATA_IN_BACKGROUND_PERMISSION =
     "android.permission.health.READ_HEALTH_DATA_IN_BACKGROUND"
 private const val HEART_RATE_SEND_INTERVAL_MS = 10_000L
+private const val SCREEN_MEASUREMENT_TAG = "GrandmaScreenHR"
 
 @WearPreviewDevices
 @WearPreviewFontScales

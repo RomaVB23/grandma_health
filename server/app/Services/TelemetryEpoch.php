@@ -41,6 +41,7 @@ class TelemetryEpoch
             DB::table('measurement_subscribers')->delete();
             DB::table('telegram_outbox')->where('purpose', 'measurement')->where('state', 'pending')->update(['state' => 'cancelled']);
             $count = DB::table('watch_events')->where('device_id', $device)->delete();
+            DB::table('phone_status')->where('device_id', $device)->delete();
             app(MonitoringSettings::class)->reset();
             // Keep membership, invites, polling cursor and notification preferences.
             // Advance incident generations so old delivered warnings cannot create

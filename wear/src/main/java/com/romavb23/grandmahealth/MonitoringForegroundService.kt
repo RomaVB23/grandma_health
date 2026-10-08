@@ -34,10 +34,30 @@ class MonitoringForegroundService : Service() {
     private var started = false
     private var wakeLock: PowerManager.WakeLock? = null
     private val spotMeasurement by lazy { SpotMeasurement(this, handler) }
+    private val automaticMeasurement by lazy {
+        AutomaticMeasurementTrigger(
+            attempt = { reason ->
+                if (started && WatchStateStore.isEnabled(this) && hasPermissions(this)) {
+                    spotMeasurement.requestAutomatic(reason)
+                } else null
+            },
+            schedule = { delay, action ->
+                val retry = Runnable { action() }
+                handler.postDelayed(retry, delay)
+                val cancel: () -> Unit = { handler.removeCallbacks(retry) }
+                cancel
+            },
+        )
+    }
     private val wearingSensor by lazy { WearingSensor(this) {
         if (started) {
             spotMeasurement.onWearingChanged()
             sendWatchHeartbeat(this)
+            if (WatchStateStore.wearing(this).first == "on") {
+                automaticMeasurement.trigger("on_wrist")
+            } else {
+                automaticMeasurement.cancelPending()
+            }
         }
     } }
 
@@ -52,6 +72,7 @@ class MonitoringForegroundService : Service() {
             // Renew a bounded lock; if the loop stalls, it expires after 10 minutes.
             renewWakeLock()
             sendWatchHeartbeat(this@MonitoringForegroundService)
+            automaticMeasurement.trigger("heartbeat")
             handler.postDelayed(this, HEARTBEAT_INTERVAL_MS)
         }
     }
@@ -92,6 +113,10 @@ class MonitoringForegroundService : Service() {
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP || !WatchStateStore.isEnabled(this)) {
+            started = false
+            handler.removeCallbacks(heartbeat)
+            automaticMeasurement.cancelPending()
+            spotMeasurement.cancel()
             wearingSensor.stop()
             WatchStateStore.setEnabled(this, false)
             WatchStateStore.setStatus(this, "stopped")
@@ -175,6 +200,10 @@ class MonitoringForegroundService : Service() {
     }
 
     private fun fail(status: String) {
+        started = false
+        handler.removeCallbacks(heartbeat)
+        automaticMeasurement.cancelPending()
+        spotMeasurement.cancel()
         wearingSensor.stop()
         WatchStateStore.setEnabled(this, false)
         WatchStateStore.setStatus(this, status)
@@ -222,6 +251,7 @@ class MonitoringForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        automaticMeasurement.close()
         spotMeasurement.cancel()
         if (activeService === this) activeService = null
         started = false

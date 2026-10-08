@@ -14,12 +14,23 @@ class MonitoringAlerts
     public function tick(array $s): void
     {
         $device = config('telemetry.device_id');
-        $rules = $this->settings->get();
         $now = BotStore::now();
+        $rules = $this->settings->effective($now);
         $row = DB::table('monitoring_state')->where('device_id', $device)->first();
         $state = $row ? json_decode($row->state, true, flags: JSON_THROW_ON_ERROR) : [];
         $state += ['last_measurement' => $rules->changed_at_ms, 'candidate' => '', 'count' => 0,
             'candidate_at' => 0, 'off_started_at' => 0];
+        if (($state['profile_key'] ?? '') !== $rules->profile_key) {
+            $state['profile_key'] = $rules->profile_key;
+            $state['candidate'] = ''; $state['count'] = 0; $state['candidate_at'] = 0;
+            $state['last_measurement'] = max($state['last_measurement'], $rules->changed_at_ms);
+            // A calendar/mode change ends the old rule episode without claiming recovery.
+            // Wearing timers and technical alert incidents remain independent.
+            DB::table('telegram_alerts')->where('kind', 'pulse')->update([
+                'active' => false, 'generation' => DB::raw('generation + 1'),
+            ]);
+            $this->cancelPending('pulse');
+        }
         $confirmationGap = $rules->confirmation_gap_minutes * 60_000;
         // Retain an accepted sample as evidence, even when its current reading
         // becomes stale. The timeout is between neighbouring confirmations.
@@ -101,6 +112,7 @@ class MonitoringAlerts
     {
         return '⚠️ Пульс по показаниям часов вне заданного диапазона: '.$event->bpm.' уд/мин.'
             .' Границы: '.$rules->pulse_lower.'–'.$rules->pulse_upper.' уд/мин.'
+            .' Профиль: '.\App\Services\MonitoringProfile::label($rules->effective_profile).'.'
             .' Измерен: '.$this->time($event->measured_at_ms).'. Проверьте самочувствие и показания.';
     }
 
@@ -108,6 +120,7 @@ class MonitoringAlerts
     {
         return '✅ Пульс по новым показаниям часов вернулся в заданный диапазон: '.$event->bpm.' уд/мин.'
             .' Границы: '.$rules->pulse_lower.'–'.$rules->pulse_upper.' уд/мин.'
+            .' Профиль: '.\App\Services\MonitoringProfile::label($rules->effective_profile).'.'
             .' Измерен: '.$this->time($event->measured_at_ms).'.';
     }
 

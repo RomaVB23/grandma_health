@@ -23,7 +23,7 @@ internal class SpotMeasurement(private val context: Context, private val handler
     private var lastStart = -SpotMeasurementRules.COOLDOWN_MS
     private val handled = LinkedHashSet<String>()
 
-    private class Session(val id: String, val node: String, val startedNanos: Long) {
+    private class Session(val id: String?, val node: String?, val startedNanos: Long, val origin: String) {
         val started = startedNanos / 1_000_000L
         lateinit var listener: SensorEventListener
         lateinit var timeout: Runnable
@@ -34,24 +34,45 @@ internal class SpotMeasurement(private val context: Context, private val handler
 
     /** Called only on the watch main thread by its running monitoring service. */
     fun request(id: String, node: String) {
-        pending?.let {
-            sendMeasurementResponse(context, node, id, if (it.id == id) "measuring" else "busy")
-            return
+        begin(id, node, "remote")
+    }
+
+    /** Uses the same sensor slot as remote requests; automatic results are ordinary measurements. */
+    fun requestAutomatic(reason: String): Long? {
+        val status = begin(null, null, reason)
+        WatchStateStore.preferences(context).edit()
+            .putString("auto_last_reason", reason).putString("auto_last_attempt_status", status)
+            .putLong("auto_last_attempt_at", System.currentTimeMillis()).apply()
+        Log.i("GrandmaAutoHR", "Automatic request reason=$reason result=$status interactive=${power?.isInteractive}")
+        return if (status == "cooldown") {
+            (SpotMeasurementRules.COOLDOWN_MS - (SystemClock.elapsedRealtime() - lastStart)).coerceAtLeast(1L)
+        } else null
+    }
+
+    private fun begin(id: String?, node: String?, origin: String): String {
+        fun reject(status: String): String {
+            if (id != null && node != null) sendMeasurementResponse(context, node, id, status)
+            return status
         }
-        if (id in handled) { sendMeasurementResponse(context, node, id, "duplicate_request"); return }
+        if (!WatchStateStore.isEnabled(context)) return reject("monitoring_stopped")
+        pending?.let {
+            return reject(if (id != null && it.id == id) "measuring" else "busy")
+        }
+        if (id != null && id in handled) return reject("duplicate_request")
         val wearing = WatchStateStore.wearing(context).first
         if (wearing != "on") {
-            sendMeasurementResponse(context, node, id, if (wearing == "off") "off_body" else "wearing_unknown")
-            return
+            return reject(if (wearing == "off") "off_body" else "wearing_unknown")
         }
         val now = SystemClock.elapsedRealtime()
         if (now - lastStart < SpotMeasurementRules.COOLDOWN_MS) {
-            sendMeasurementResponse(context, node, id, "cooldown"); return
+            return reject("cooldown")
         }
         lastStart = now
-        handled.add(id)
-        if (handled.size > 16) handled.remove(handled.first())
-        val session = Session(id, node, SystemClock.elapsedRealtimeNanos())
+        if (id != null) {
+            handled.add(id)
+            if (handled.size > 16) handled.remove(handled.first())
+        }
+        val session = Session(id, node, SystemClock.elapsedRealtimeNanos(), origin)
         pending = session
         session.timeout = Runnable { finish(session, "timeout") }
         session.listener = object : SensorEventListener {
@@ -82,6 +103,7 @@ internal class SpotMeasurement(private val context: Context, private val handler
             }
         }
         WatchStateStore.preferences(context).edit().putString("spot_backend", "sensor_manager")
+            .putString("spot_origin", origin)
             .putString("spot_last_status", "starting").putInt("spot_events", 0).putInt("spot_rejected", 0)
             .putInt("spot_last_accuracy", -2).putLong("spot_last_sample_age_ms", -1L)
             .putBoolean("spot_started_interactive", power?.isInteractive == true).apply()
@@ -90,16 +112,17 @@ internal class SpotMeasurement(private val context: Context, private val handler
             // Prefer a wake-up sensor (CPU wake-up only), if this watch exposes one.
             val sensor = manager?.getDefaultSensor(Sensor.TYPE_HEART_RATE, true)
                 ?: manager?.getDefaultSensor(Sensor.TYPE_HEART_RATE)
-            if (sensor == null) { finish(session, "unsupported"); return }
+            if (sensor == null) { finish(session, "unsupported"); return "unsupported" }
             session.wakeLock = power?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "GrandmaHealth:spot")
                 ?.apply { setReferenceCounted(false); acquire(SpotMeasurementRules.TIMEOUT_MS + 5_000L) }
             val registered = manager?.registerListener(session.listener, sensor, 1_000_000, 0, handler) == true
-            if (!registered) { finish(session, "sensor_error"); return }
+            if (!registered) { finish(session, "sensor_error"); return "sensor_error" }
             WatchStateStore.preferences(context).edit().putString("spot_last_status", "measuring").apply()
-            sendMeasurementResponse(context, node, id, "measuring")
+            if (id != null && node != null) sendMeasurementResponse(context, node, id, "measuring")
             Log.i("GrandmaMeasure", "Direct HR registered wake_up=${sensor.isWakeUpSensor} mode=${sensor.reportingMode} interactive=${power?.isInteractive}")
-        } catch (_: SecurityException) { finish(session, "permission_lost") }
-        catch (_: Exception) { finish(session, "sensor_error") }
+        } catch (_: SecurityException) { finish(session, "permission_lost"); return "permission_lost" }
+        catch (_: Exception) { finish(session, "sensor_error"); return "sensor_error" }
+        return "measuring"
     }
 
     fun onWearingChanged() {
@@ -116,8 +139,18 @@ internal class SpotMeasurement(private val context: Context, private val handler
         pending = null
         handler.removeCallbacks(session.timeout)
         unregister(session)
-        if (status == "success") sendHeartRateToPhone(context, bpm, measuredAt)
-        sendMeasurementResponse(context, session.node, session.id, status, bpm, measuredAt, session.started, sampled)
+        if (status == "success") {
+            sendHeartRateToPhone(context, bpm, measuredAt)
+            if (session.node == null) sendWatchHeartbeat(context)
+        }
+        if (session.node != null && session.id != null) {
+            sendMeasurementResponse(context, session.node, session.id, status, bpm, measuredAt, session.started, sampled)
+        } else {
+            WatchStateStore.preferences(context).edit()
+                .putString("auto_last_status", status).putLong("auto_last_finished_at", System.currentTimeMillis())
+                .putLong("auto_last_measured_at", if (status == "success") measuredAt else 0L).apply()
+            Log.i("GrandmaAutoHR", "Automatic result reason=${session.origin} status=$status bpm=${if (status == "success") bpm else 0} interactive=${power?.isInteractive}")
+        }
         WatchStateStore.preferences(context).edit().putString("spot_last_status", status)
             .putBoolean("spot_finished_interactive", power?.isInteractive == true).apply()
         Log.i("GrandmaMeasure", "Direct HR request finished: $status events=${session.events} rejected=${session.rejected} interactive=${power?.isInteractive}")

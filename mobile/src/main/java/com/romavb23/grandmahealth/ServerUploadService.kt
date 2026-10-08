@@ -33,6 +33,7 @@ class ServerUploadService : Service() {
     private val busy = AtomicBoolean(false)
     private lateinit var settings: UploadSettings
     private lateinit var outbox: TelemetryOutbox
+    private lateinit var phoneBattery: PhoneBatteryReporter
     private var networkRegistered = false
     @Volatile private var destroyed = false
     private val periodic = object : Runnable {
@@ -46,6 +47,7 @@ class ServerUploadService : Service() {
         super.onCreate()
         settings = UploadSettings(this)
         outbox = TelemetryOutbox.get(this)
+        phoneBattery = PhoneBatteryReporter(applicationContext, settings)
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
@@ -108,6 +110,9 @@ class ServerUploadService : Service() {
                 setError("Не удалось отправить данные. Очередь сохранена")
             } finally {
                 if (lock.isHeld) lock.release()
+                // Runs even with an empty watch queue or a failed watch upload.
+                // Sampling/upload has its own short wake lock and error status.
+                if (!destroyed && settings.enabled) phoneBattery.publish()
                 busy.set(false)
             }
         }

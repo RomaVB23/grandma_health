@@ -5,6 +5,7 @@ use App\Http\Controllers\WatchStatusController;
 use Illuminate\Support\Facades\Route;
 
 Route::prefix('v1')->middleware('telemetry.token')->group(function (): void {
+    Route::post('/phone-status', \App\Http\Controllers\PhoneStatusController::class);
     Route::post('/measurement-requests/claim', [\App\Http\Controllers\MeasurementController::class, 'claim']);
     Route::post('/measurement-requests/{id}/result', [\App\Http\Controllers\MeasurementController::class, 'result'])->whereUuid('id');
     Route::post('/events', [WatchEventController::class, 'store']);

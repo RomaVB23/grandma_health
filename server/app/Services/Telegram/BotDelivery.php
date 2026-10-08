@@ -24,11 +24,21 @@ class BotDelivery
                 $allowed = $allowed && $member?->alerts_allowed && $member?->notifications_enabled
                     && $alert && (bool) $alert->active === (bool) $message->alert_active
                     && $alert->generation === $message->alert_generation;
+                if ($allowed && $message->alert_kind === 'phone_battery') {
+                    $s = $this->status->snapshot();
+                    $percent = $s['phone_battery_percent'] ?? null;
+                    $low = $percent !== null && !($s['phone_charging'] ?? false)
+                        && $percent < config('telegram.battery_recovered_percent');
+                    $allowed = $percent !== null && !($s['phone_battery_stale'] ?? true)
+                        && $low === (bool) $message->alert_active;
+                }
                 if ($allowed && in_array($message->alert_kind, ['pulse', 'wearing'], true)) {
                     $s = $this->status->snapshot();
-                    $rules = app(\App\Services\MonitoringSettings::class)->get();
+                    $rules = app(\App\Services\MonitoringSettings::class)->effective();
                     if ($message->alert_kind === 'pulse') {
-                        $allowed = ($s['pulse_eligible'] ?? false)
+                        $state = json_decode(DB::table('monitoring_state')->where('device_id', config('telemetry.device_id'))
+                            ->value('state') ?? '{}', true, flags: JSON_THROW_ON_ERROR);
+                        $allowed = ($state['profile_key'] ?? '') === $rules->profile_key && ($s['pulse_eligible'] ?? false)
                             && \App\Services\MonitoringEligibility::outside($s['bpm'], $rules) === (bool) $message->alert_active;
                     } else {
                         $allowed = $rules->wearing_enabled && $s['contact_recent'] && $s['monitoring_status'] === 'active'

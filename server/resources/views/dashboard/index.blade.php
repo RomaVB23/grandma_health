@@ -16,6 +16,13 @@
     <section class="panel status-card"><div class="card-label">Связь с часами <span aria-hidden="true">⌁</span></div><div class="card-value word-value">{{ $status['contact_recent'] ? 'Есть сигнал' : 'Нет свежего сигнала' }}</div><p>Последний {{ $text->time($status['last_live_contact_at_ms']) }}</p><span class="pill {{ $status['contact_recent'] ? 'green' : 'amber' }}">{{ $status['contact_age_ms'] === null ? 'Ожидаем первый сигнал' : 'Прошло '.$text->age($status['contact_age_ms']) }}</span></section>
     <section class="panel status-card tone-{{ $text->batteryTone($status['battery_percent']) }}"><div class="card-label">Заряд часов <span aria-hidden="true">▱</span></div><div class="card-value">{{ $status['battery_percent'] ?? '—' }}@if ($status['battery_percent'] !== null)<small>%</small>@endif</div><p>{{ $status['snapshot_at_ms'] !== null && $status['server_time_ms'] - $status['snapshot_at_ms'] >= config('telegram.battery_fresh_ms') ? 'Последние данные' : 'Данные' }} {{ $text->time($status['snapshot_at_ms']) }}</p><span class="pill status-level {{ $text->batteryTone($status['battery_percent']) }}">{{ $text->batteryLevel($status['battery_percent']) }}</span><span class="pill neutral">{{ $status['charging'] === null ? 'Нет данных о зарядке' : ($status['charging'] ? 'Заряжаются' : 'Без зарядки') }} · {{ $text->monitoring($status['monitoring_status']) }}</span></section>
     <section class="panel status-card tone-{{ $text->wearingTone($status['wearing_state']) }}"><div class="card-label">Ношение часов <span aria-hidden="true">⌚</span></div><div class="card-value word-value">{{ $text->wearing($status['wearing_state']) }}</div><p>Данные {{ $text->time($status['wearing_reported_at_ms']) }}</p><span class="pill {{ $text->wearingTone($status['wearing_state']) }}">{{ $status['wearing_state'] === 'unknown' ? 'Нужен свежий сигнал датчика' : 'Этот статус определён датчиком' }}</span></section>
+    <section id="phone-battery" class="panel status-card tone-{{ $status['phone_battery_stale'] ? 'neutral' : $text->batteryTone($status['phone_battery_percent']) }}">
+        <div class="card-label">Заряд телефона <span aria-hidden="true">📱</span></div>
+        <div class="card-value">{{ $status['phone_battery_percent'] ?? '—' }}@if ($status['phone_battery_percent'] !== null)<small>%</small>@endif</div>
+        <p>Данные {{ $text->time($status['phone_snapshot_at_ms']) }}</p>
+        <span class="pill {{ $status['phone_battery_stale'] ? 'neutral' : $text->batteryTone($status['phone_battery_percent']) }}">{{ $status['phone_battery_percent'] === null ? 'Нет данных о заряде' : ($status['phone_battery_stale'] ? 'Данные устарели' : $text->batteryLevel($status['phone_battery_percent'])) }}</span>
+        <span class="pill neutral">{{ $status['phone_charging'] === null ? 'Ожидаем Honor' : ($status['phone_charging'] ? 'Заряжается' : 'Без зарядки') }}</span>
+    </section>
 </div>
 <section class="panel measurement-panel" id="remote-measurement"
     data-endpoint="{{ route('dashboard.measurement.create') }}"
@@ -28,6 +35,7 @@
     <noscript><p class="muted">Для запроса замера включите JavaScript.</p></noscript>
 </section>
 <p class="control-note">{{ $text->pulseControl($status['pulse_control_status']) }} · границы {{ $status['pulse_lower'] }}–{{ $status['pulse_upper'] }} уд/мин. <a class="text-link" href="{{ route('dashboard.monitoring') }}">Настроить</a></p>
+<p class="control-note">Профиль: {{ \App\Services\MonitoringProfile::label($status['pulse_profile']) }} · {{ $status['pulse_mode'] === 'auto' ? 'по расписанию' : 'вручную' }}. {{ $status['pulse_mode'] === 'auto' ? 'Следующая смена' : 'Возврат к расписанию' }}: {{ \Carbon\CarbonImmutable::createFromTimestampMs($status['pulse_next_switch_at_ms'])->setTimezone($status['pulse_profile_timezone'])->format('d.m.Y H:i') }} · {{ $status['pulse_profile_timezone'] }}.</p>
 <p class="snapshot-note">Состояние на {{ $text->time($status['server_time_ms']) }} · {{ $timezone }}. Свежая связь не означает новое измерение пульса.</p>
 
 @include('dashboard.pulse-chart')

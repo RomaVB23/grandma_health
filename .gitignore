@@ -24,3 +24,8 @@ local.properties
 /server/.phpunit.cache/
 /server/storage/
 /server/bootstrap/cache/*.php
+
+# Локальные результаты проверки ИИ
+/ai/local/
+
+/ai/

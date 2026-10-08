@@ -58,11 +58,21 @@ class BotHandler
         $action = $callback ? (string) ($callback['data'] ?? '') : match ($text) {
             '📊 Состояние бабушки', '🔄 Обновить', '/status' => 'status',
             '❤️ Измерить сейчас' => 'measure',
+            '🕒 Режим контроля' => 'mode',
             '🔔 Мои уведомления' => 'notifications', '👥 Участники' => 'members:0',
             '➕ Добавить участника' => 'invite', '❓ Помощь', '/help' => 'help', default => 'menu',
         };
         if ($action === 'status') {
             $this->store->enqueue($user, '', $this->inline([['❤️ Измерить сейчас', 'measure'], ['🔄 Обновить', 'status'], ['⬅️ Меню', 'menu']]), 'status');
+        } elseif ($this->store->isOwner($user) && $action === 'mode') {
+            $this->modeCard($user);
+        } elseif ($this->store->isOwner($user) && preg_match('/^mode:(auto|day|night):(\d{1,16})$/D', $action, $m)) {
+            try {
+                app(\App\Services\MonitoringSettings::class)->setMode($m[1], app(\App\Services\TelemetryEpoch::class), (int) $m[2]);
+                $this->modeCard($user, "Режим изменён. Настройка общая с веб-интерфейсом.\n\n");
+            } catch (\Illuminate\Validation\ValidationException) {
+                $this->modeCard($user, "Кнопки устарели: настройки уже изменены. Ниже актуальный режим и новые кнопки.\n\n");
+            }
         } elseif ($action === 'measure') {
             try {
                 $request = app(\App\Services\MeasurementRequests::class)->create($user);
@@ -75,6 +85,7 @@ class BotHandler
             $this->store->enqueue($user, 'Кнопка состояния показывает последние данные сервера и их возраст. Свежая связь не означает, что пульс только что измерен.'
                 ."\n\n«Измерить сейчас» запрашивает новый пульс через телефон. Экран часов можно оставить погашенным. При снятых часах или недоступном телефоне придёт причина отказа."
                 ."\n\nТехнические оповещения сообщают о потере связи, низком заряде и длительном снятии часов. Контроль пульса включается отдельно в веб-интерфейсе: границы и подтверждение задаёт администратор."
+                ."\n\nДневные и ночные границы переключаются по расписанию. Администратор может временно изменить профиль кнопкой «Режим контроля»; настройка общая с веб-интерфейсом. Это не выключает контроль пульса."
                 ."\n\nУведомления о пульсе основаны на показаниях часов и не являются диагнозом. Неизвестное ношение и устаревший пульс не означают возвращение в диапазон."
                 ."\n\nЕсли выключен компьютер или пропал его интернет, этот бот не сможет прислать сообщение до восстановления работы.", $this->menu($user));
         } elseif ($action === 'notifications' || $action === 'notifications:toggle') {
@@ -125,6 +136,16 @@ class BotHandler
         $this->store->enqueue($user, 'Заявка отправлена. Дождитесь подтверждения администратора.', null, 'access');
         $this->store->enqueue($this->store->ownerId(), "👤 Заявка на доступ: $name\nTelegram ID: $user",
             $this->inline([['Открыть заявку', 'member:'.$user]]));
+    }
+
+    private function modeCard(int $owner, string $prefix = ''): void
+    {
+        $settings = app(\App\Services\MonitoringSettings::class);
+        $version = $settings->get()->changed_at_ms;
+        $this->store->enqueue($owner, $prefix.$settings->description()
+            ."\n\nРучной профиль действует до ближайшей границы расписания. Пороги и время настраиваются в веб-интерфейсе.",
+            $this->inline([['🕒 Автоматически', 'mode:auto:'.$version], ['☀️ Дневной', 'mode:day:'.$version],
+                ['🌙 Ночной', 'mode:night:'.$version], ['⬅️ Меню', 'menu']]));
     }
 
     private function members(int $owner, int $page): void
@@ -202,6 +223,7 @@ class BotHandler
             [['text' => '❤️ Измерить сейчас']],
             [['text' => '🔔 Мои уведомления'], ['text' => '❓ Помощь']]];
         if ($this->store->isOwner($user)) {
+            $rows[] = [['text' => '🕒 Режим контроля']];
             $rows[] = [['text' => '👥 Участники'], ['text' => '➕ Добавить участника']];
         }
         return ['keyboard' => $rows, 'resize_keyboard' => true, 'is_persistent' => true];

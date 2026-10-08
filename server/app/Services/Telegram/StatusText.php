@@ -14,6 +14,10 @@ class StatusText
         $connection = $s['last_live_contact_at_ms'] === null ? 'свежий сигнал ещё не получен'
             : ($s['contact_recent'] ? 'есть свежий сигнал' : 'нет свежего сигнала ≥ 10 мин');
         $battery = $s['battery_percent'] === null ? 'нет данных' : $s['battery_percent'].'%'.($s['charging'] ? ' · заряжаются' : '');
+        $phonePercent = $s['phone_battery_percent'] ?? null;
+        $phoneBattery = $phonePercent === null ? 'нет данных' : $phonePercent.'%'
+            .(($s['phone_charging'] ?? false) ? ' · заряжается' : '')
+            .(($s['phone_battery_stale'] ?? true) ? ' · данные устарели' : '');
         $monitoring = match ($s['monitoring_status']) {
             'active' => 'включён', 'starting' => 'запускается', 'stopped' => 'выключен',
             'permission_lost' => 'нет разрешения', 'unsupported' => 'не поддерживается',
@@ -25,6 +29,13 @@ class StatusText
         $control = !($s['pulse_control_enabled'] ?? false) ? 'выключен'
             : (($s['pulse_eligible'] ?? false) ? (($s['pulse_control_status'] ?? '') === 'out_of_range'
                 ? 'показание вне заданного диапазона' : 'показание в заданном диапазоне') : 'ожидаем свежий замер на руке');
+        $profile = isset($s['pulse_profile']) ? "\nПрофиль: ".\App\Services\MonitoringProfile::label($s['pulse_profile'])
+            .(($s['pulse_mode'] ?? 'auto') === 'auto' ? ' · по расписанию' : ' · вручную') : '';
+        if (isset($s['pulse_next_switch_at_ms'])) {
+            $profile .= "\n".(($s['pulse_mode'] ?? 'auto') === 'auto' ? 'Следующая смена: ' : 'Возврат к расписанию: ')
+                .\Carbon\CarbonImmutable::createFromTimestampMs($s['pulse_next_switch_at_ms'])
+                    ->setTimezone($s['pulse_profile_timezone'])->format('d.m.Y H:i').' · '.$s['pulse_profile_timezone'];
+        }
 
         return "📊 Состояние на ".$this->time($s['server_time_ms'])."\n\n"
             ."❤️ Последний пульс: $pulse\n"
@@ -34,9 +45,11 @@ class StatusText
             ."⌚ Ношение: $wearing\n"
             .'Данные ношения: '.$this->time($s['wearing_reported_at_ms'] ?? null)."\n"
             ."Контроль пульса: $control"
-            .(isset($s['pulse_lower'], $s['pulse_upper']) ? ' · границы '.$s['pulse_lower'].'–'.$s['pulse_upper'].' уд/мин' : '')."\n\n"
+            .(isset($s['pulse_lower'], $s['pulse_upper']) ? ' · границы '.$s['pulse_lower'].'–'.$s['pulse_upper'].' уд/мин' : '').$profile."\n\n"
             ."🔋 Заряд часов: $battery\nДанные заряда: ".$this->time($s['snapshot_at_ms'])."\n"
             ."Мониторинг: $monitoring (последний известный статус)\n\n"
+            ."📱 Заряд телефона: $phoneBattery\nДанные заряда телефона: "
+            .$this->time($s['phone_snapshot_at_ms'] ?? null)."\n\n"
             .'Это последние полученные данные. Для нового замера нажмите «Измерить сейчас».';
     }
 
