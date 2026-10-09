@@ -20,15 +20,16 @@ internal class TelemetryOutbox private constructor(context: Context) :
         error("Unsupported outbox migration: $oldVersion -> $newVersion")
     }
 
-    fun enqueue(data: DataMap, heartbeat: Boolean, receivedAt: Long, status: String) {
+    fun enqueue(data: DataMap, heartbeat: Boolean, receivedAt: Long, status: String,
+        liveContactEligible: Boolean = heartbeat): Boolean {
         val sentAt = data.getLong(WATCH_KEY_SENT_AT, data.getLong(HEART_RATE_KEY_MEASURED_AT, 0L))
-        if (sentAt <= 0 || sentAt > receivedAt + WatchFreshness.CLOCK_TOLERANCE_MS) return
+        if (sentAt <= 0 || sentAt > receivedAt + WatchFreshness.CLOCK_TOLERANCE_MS) return false
         val measuredAt = data.getLong(HEART_RATE_KEY_MEASURED_AT, 0L)
         val bpm = data.getInt(HEART_RATE_KEY_BPM, -1)
         val validPulse = bpm in 1..1000 && measuredAt > 0 &&
             measuredAt <= sentAt + WatchFreshness.CLOCK_TOLERANCE_MS &&
             measuredAt <= receivedAt + WatchFreshness.CLOCK_TOLERANCE_MS
-        if (!heartbeat && !validPulse) return
+        if (!heartbeat && !validPulse) return false
         val id = UUID.randomUUID().toString()
         val source = if (heartbeat) "heartbeat" else "measurement"
         val wearingState = data.getString("wearing_state") ?: "unknown"
@@ -43,11 +44,15 @@ internal class TelemetryOutbox private constructor(context: Context) :
             .put("charging", data.getBoolean(HEART_RATE_KEY_CHARGING, false))
             .put("monitoring_status", status.takeIf { it in STATUSES } ?: "unknown")
             .put("wearing_state", if (validWearing) wearingState else "unknown")
-            .put("wearing_since_ms", if (validWearing) wearingSince else JSONObject.NULL).toString()
+            .put("wearing_since_ms", if (validWearing) wearingSince else JSONObject.NULL)
+        val chargingSince = data.getLong("charging_since_ms", 0L)
+        if (chargingSince in 1L..sentAt) body.put("charging_since_ms", chargingSince)
+        if (heartbeat && !liveContactEligible) body.put("live_heartbeat", false)
         // SQLite transaction is complete before we announce a packet ready for upload.
         writableDatabase.insertOrThrow("outbox", null, ContentValues().apply {
-            put("id", id); put("body", body); put("source", source); put("received_at", receivedAt)
+            put("id", id); put("body", body.toString()); put("source", source); put("received_at", receivedAt)
         })
+        return true
     }
 
     fun next(prioritizeLive: Boolean): Packet? {

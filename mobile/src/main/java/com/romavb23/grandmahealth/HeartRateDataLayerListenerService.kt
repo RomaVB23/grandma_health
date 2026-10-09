@@ -10,6 +10,7 @@ import com.google.android.gms.wearable.DataMap
 import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.MessageEvent
 import com.google.android.gms.wearable.WearableListenerService
+import com.google.android.gms.wearable.Wearable
 
 class HeartRateDataLayerListenerService : WearableListenerService() {
     override fun onDataChanged(dataEvents: DataEventBuffer) {
@@ -17,6 +18,22 @@ class HeartRateDataLayerListenerService : WearableListenerService() {
             if (event.type == DataEvent.TYPE_CHANGED && event.dataItem.uri.path == HEART_RATE_PATH) {
                 // DataItems can be replayed after reconnection. Never mark them as live contact.
                 saveSnapshot(DataMapItem.fromDataItem(event.dataItem).dataMap, liveHeartbeat = false)
+            }
+            if (event.type == DataEvent.TYPE_CHANGED && event.dataItem.uri.path?.startsWith("/watch/charging/") == true) {
+                // Persist both offline transitions before acknowledging/removing the DataItem.
+                // Historical packets never establish live contact or regress the current UI.
+                try {
+                    val data = DataMapItem.fromDataItem(event.dataItem).dataMap
+                    if (TelemetryOutbox.get(this).enqueue(data, true, System.currentTimeMillis(),
+                            data.getString(WATCH_KEY_MONITORING_STATUS) ?: "unknown", liveContactEligible = false)) {
+                        ServerUploadService.packetReady()
+                        Wearable.getDataClient(this).deleteDataItems(event.dataItem.uri).addOnFailureListener {
+                            Log.w(LOG_TAG, "Charging history persisted; DataItem cleanup failed")
+                        }
+                    }
+                } catch (_: Exception) {
+                    Log.e(LOG_TAG, "Cannot persist charging history; DataItem retained")
+                }
             }
         }
     }

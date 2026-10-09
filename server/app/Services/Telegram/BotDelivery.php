@@ -14,7 +14,7 @@ class BotDelivery
     {
         $deadline = microtime(true) + 8;
         $messages = DB::table('telegram_outbox')->where('state', 'pending')->where('available_at_ms', '<=', BotStore::now())
-            ->orderByRaw("CASE WHEN purpose='alert' THEN 0 ELSE 1 END")->orderBy('id')->limit(100)->get();
+            ->orderByRaw("CASE WHEN purpose IN ('alert', 'charging') THEN 0 ELSE 1 END")->orderBy('id')->limit(100)->get();
         foreach ($messages as $message) {
             if (microtime(true) >= $deadline) { return; }
             $member = DB::table('telegram_members')->where('user_id', $message->user_id)->first();
@@ -42,9 +42,16 @@ class BotDelivery
                             && \App\Services\MonitoringEligibility::outside($s['bpm'], $rules) === (bool) $message->alert_active;
                     } else {
                         $allowed = $rules->wearing_enabled && $s['contact_recent'] && $s['monitoring_status'] === 'active'
+                            && ($s['charging_state'] ?? 'unknown') !== 'charging'
                             && ($s['wearing_state'] ?? 'unknown') === ($message->alert_active ? 'off' : 'on');
                     }
                 }
+            }
+            if ($message->purpose === 'charging') {
+                $s = $this->status->snapshot();
+                $allowed = $allowed && $member?->alerts_allowed && $member?->notifications_enabled
+                    && ($s['charging_state'] ?? 'unknown') !== 'unknown'
+                    && ($s['charging_state'] === 'charging') === (bool) $message->alert_active;
             }
             if ($message->purpose === 'chart_scheduled') {
                 $allowed = $allowed && $member?->alerts_allowed && $member?->notifications_enabled

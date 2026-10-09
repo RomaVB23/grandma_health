@@ -7,7 +7,7 @@ use Illuminate\Validation\ValidationException;
 /** One measurement selection for the web chart and Telegram images. */
 class PulseChartData
 {
-    public function __construct(private WatchHistory $history, private WatchPeriodReport $report) {}
+    public function __construct(private WatchHistory $history, private WatchPeriodReport $report, private ChargingHistory $charging) {}
 
     public function build(int $start, int $end, string $timezone, int $gap = 600_000, bool $endExclusive = false): array
     {
@@ -26,6 +26,7 @@ class PulseChartData
         }
         $points = $rows->map(fn ($row) => [(int) $row->measured_at_ms, (int) $row->bpm])->all();
         return ['timezone' => $timezone, 'from_ms' => $start, 'to_ms' => $end, 'gap_ms' => $gap,
-            'points' => $points, 'report' => $this->report->build($points, $start, $end, $gap)];
+            'points' => $points, 'charging' => $this->charging->build($start, $end),
+            'report' => $this->report->build($points, $start, $end, $gap)];
     }
 }

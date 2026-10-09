@@ -32,10 +32,14 @@ class WatchEventController
                 $storedPayload['bpm'] = null;
                 $storedPayload['measured_at_ms'] = null;
             }
+            if (($payload['charging_since_ms'] ?? null) !== null && $payload['charging_since_ms'] <= $epoch->cleared_before_ms) {
+                $storedPayload['charging_since_ms'] = null; // Do not restore a pre-reset charging interval.
+            }
             $tolerance = (int) config('telemetry.clock_tolerance_ms');
 
             // Offline/replayed samples enter history, but do not become live contact.
             $liveContact = $payload['source'] === 'heartbeat'
+                && ($payload['live_heartbeat'] ?? true)
                 && abs($now - $payload['received_at_ms']) <= $tolerance
                 && abs($payload['received_at_ms'] - $payload['watch_sent_at_ms']) <= $tolerance;
 
@@ -43,13 +47,14 @@ class WatchEventController
             $inserted = DB::affectingStatement(
                 'INSERT INTO watch_events (event_id, device_id, source, received_at_ms, watch_sent_at_ms, '
                 .'bpm, measured_at_ms, battery_percent, charging, monitoring_status, server_received_at_ms, '
-                .'live_contact, payload_hash, wearing_state, wearing_since_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
+                .'live_contact, payload_hash, wearing_state, wearing_since_ms, charging_since_ms) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) '
                 .'ON CONFLICT(event_id) DO NOTHING',
                 [
                     ...array_map(fn ($key) => $storedPayload[$key], ['event_id', 'device_id', 'source', 'received_at_ms',
                         'watch_sent_at_ms', 'bpm', 'measured_at_ms', 'battery_percent', 'charging', 'monitoring_status']),
                     $now, (int) $liveContact, $hash, $storedPayload['wearing_state'] ?? 'unknown',
                     $storedPayload['wearing_since_ms'] ?? null,
+                    $storedPayload['charging_since_ms'] ?? null,
                 ],
             );
 

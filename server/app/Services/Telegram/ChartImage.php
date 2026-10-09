@@ -25,6 +25,7 @@ class ChartImage
             $white = $color([255, 255, 255]); $ink = $color([25, 39, 59]);
             $muted = $color([106, 122, 145]); $purple = $color([103, 85, 218]);
             $grid = $color([230, 235, 243]); $pause = $color([238, 241, 247]);
+            $charging = $color([246, 214, 168]);
             $red = $color([191, 58, 74]);
             imagefill($image, 0, 0, $white);
             $text = function (string $s, int $x, int $y, int $size = 18, ?int $c = null, bool $bold = false) use ($image, $font, $boldFont, $ink): void {
@@ -55,6 +56,10 @@ class ChartImage
                 if ($at - $previous > $chart['gap_ms']) imagefilledrectangle($image, $xAt($previous), $top, $xAt($at), $bottom, $pause);
                 $previous = $at;
             }
+            foreach ($chart['charging']['intervals'] ?? [] as [$a, $b]) {
+                $a = max($a, $chart['from_ms']); $b = min($b, $chart['to_ms']);
+                if ($a < $b) imagefilledrectangle($image, $xAt($a), $top, $xAt($b), $bottom, $charging);
+            }
             for ($i = 0; $i <= 4; $i++) {
                 $value = (int) round($min + ($max - $min) * $i / 4); $y = $yAt($value);
                 imageline($image, $left, $y, $right, $y, $grid); $text((string) $value, 28, $y + 6, 15, $muted);
@@ -63,7 +68,9 @@ class ChartImage
             imagesetthickness($image, 2);
             foreach ($points as $i => [$at, $bpm]) {
                 $x = $xAt($at); $y = $yAt($bpm);
-                if ($i > 0 && $at - $points[$i - 1][0] <= $chart['gap_ms']) {
+                $chargerBetween = $i > 0 && array_filter($chart['charging']['intervals'] ?? [],
+                    fn ($p) => $p[0] < $at && $p[1] > $points[$i - 1][0]) !== [];
+                if ($i > 0 && !$chargerBetween && $at - $points[$i - 1][0] <= $chart['gap_ms']) {
                     imageline($image, $xAt($points[$i - 1][0]), $yAt($points[$i - 1][1]), $x, $y, $purple);
                 }
                 imagefilledellipse($image, $x, $y, 4, 4, $purple);
@@ -77,6 +84,7 @@ class ChartImage
             if (!$points) $text('В этом периоде нет полученных замеров', 334, 425, 23, $muted);
             imagefilledrectangle($image, 38, 651, 62, 654, $purple); $text('Измеренный пульс', 72, 658, 15, $muted);
             imagefilledrectangle($image, 326, 641, 350, 657, $pause); $text('Пауза без замеров более 10 минут', 360, 658, 15, $muted);
+            imagefilledrectangle($image, 870, 641, 894, 657, $charging); $text('Часы на зарядке', 904, 658, 15, $muted);
             $text('Линия соединяет отдельные замеры. Пульс между точками неизвестен.', 38, 699, 15, $muted);
             ob_start();
             try {

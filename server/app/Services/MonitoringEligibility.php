@@ -9,6 +9,7 @@ class MonitoringEligibility
         $ageLimit = $rules->pulse_max_age_seconds * 1000;
         $tolerance = config('telemetry.clock_tolerance_ms');
         return (bool) $rules->pulse_enabled && $s['contact_recent'] && $s['monitoring_status'] === 'active'
+            && ($s['charging_state'] ?? 'unknown') !== 'charging' && !($event->charging ?? false)
             && ($s['wearing_state'] ?? 'unknown') === 'on' && $event->bpm !== null && $event->measured_at_ms !== null
             && $event->wearing_state === 'on' && $event->measured_at_ms >= ($s['wearing_since_ms'] ?? PHP_INT_MAX)
             && $event->measured_at_ms > $rules->changed_at_ms && $event->measured_at_ms <= $now + $tolerance

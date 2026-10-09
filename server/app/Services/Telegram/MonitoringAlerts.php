@@ -39,8 +39,17 @@ class MonitoringAlerts
         }
         $worn = $s['wearing_state'] ?? 'unknown';
         $live = $s['contact_recent'] && $s['monitoring_status'] === 'active';
+        app(ChargingNotifications::class)->tick($s, $state);
+        $charging = ($s['charging_state'] ?? 'unknown') === 'charging';
+        if ($charging) {
+            $state['off_started_at'] = 0;
+            $this->cancelPending('wearing');
+            // Charging ends the off-wrist incident without a false "worn again" notice.
+            DB::table('telegram_alerts')->where('kind', 'wearing')->where('active', true)
+                ->update(['active' => false, 'generation' => DB::raw('generation + 1')]);
+        }
 
-        if ($rules->wearing_enabled && $live && $worn === 'off') {
+        if ($rules->wearing_enabled && $live && $worn === 'off' && !$charging) {
             if ($state['off_started_at'] === 0) $state['off_started_at'] = $now;
             if ($now - $state['off_started_at'] >= $rules->off_wrist_minutes * 60_000) {
                 $this->notifications->update('wearing', true,
@@ -49,7 +58,7 @@ class MonitoringAlerts
             }
         } else {
             $state['off_started_at'] = 0;
-            if ($rules->wearing_enabled && $live && $worn === 'on') {
+            if ($rules->wearing_enabled && $live && $worn === 'on' && !$charging) {
                 $this->notifications->update('wearing', false, '',
                     '✅ Часы снова определяются как надетые. Для контроля пульса ожидаем новое измерение.');
             } else {
@@ -57,7 +66,7 @@ class MonitoringAlerts
             }
         }
 
-        if (!$rules->pulse_enabled || !$live || $worn !== 'on') {
+        if (!$rules->pulse_enabled || !$live || $worn !== 'on' || $charging) {
             $state['candidate'] = ''; $state['count'] = 0;
             $state['last_measurement'] = max($state['last_measurement'], $s['measured_at_ms'] ?? 0);
             $this->cancelPending('pulse');

@@ -3,19 +3,23 @@
     'use strict';
     function seriesModel(data) {
         const segments = [], gaps = [];
+        const charging = (data.charging?.intervals || []).map(([a, b]) => [Math.max(a, data.from_ms), Math.min(b, data.to_ms)])
+            .filter(([a, b]) => a < b);
         let segment = [], previous = data.from_ms;
         for (const point of data.points) {
-            if (point[0] - previous > data.gap_ms) {
+            const longGap = point[0] - previous > data.gap_ms;
+            const chargerBetween = segment.length && charging.some(([a, b]) => a < point[0] && b > previous);
+            if (longGap || chargerBetween) {
                 if (segment.length) segments.push(segment);
                 segment = [];
-                gaps.push([previous, point[0]]);
+                if (longGap) gaps.push([previous, point[0]]);
             }
             segment.push(point);
             previous = point[0];
         }
         if (segment.length) segments.push(segment);
         if (data.to_ms - previous > data.gap_ms) gaps.push([previous, data.to_ms]);
-        return {segments, gaps};
+        return {segments, gaps, charging};
     }
     // Exposed for small calculation tests, independent of the DOM.
     globalThis.GrandmaPulseChart = {seriesModel};
@@ -94,7 +98,9 @@
         text('report-battery-range', battery.snapshot_count
             ? `${battery.first.percent}% (${fullTime(battery.first.at_ms)}) → ${battery.last.percent}% (${fullTime(battery.last.at_ms)})`
             : 'Нет данных');
-        text('report-charging', battery.charging_observed === null ? 'Нет данных'
+        text('report-charging', data.charging?.intervals.length
+            ? `${data.charging.intervals.length} периодов · ${duration(data.charging.total_ms)}`
+            : battery.charging_observed === null ? 'Нет данных'
             : battery.charging_observed ? 'Есть снимки со статусом «Заряжаются»' : 'В сохранённых снимках зарядка не зафиксирована');
     }
     function render() {
@@ -108,11 +114,6 @@
         svg.setAttribute('width', '100%'); svg.setAttribute('height', height);
         element('title', {}, 'Уникальные замеры пульса по времени измерения');
         element('desc', {}, description());
-        if (!data.points.length) {
-            element('text', {x: width / 2, y: height / 2, 'text-anchor': 'middle', class: 'chart-empty'}, 'За этот период замеров нет');
-            layout = null;
-            return;
-        }
         let low = data.thresholds.lower, high = data.thresholds.upper;
         for (const point of data.points) {low = Math.min(low, point[1]); high = Math.max(high, point[1]);}
         const min = Math.max(0, Math.floor((low - 10) / 10) * 10);
@@ -123,6 +124,12 @@
         const model = seriesModel(data);
         for (const [start, end] of model.gaps) {
             element('rect', {x: x(start), y: top, width: Math.max(0, x(end) - x(start)), height: h, class: 'chart-gap-area'});
+        }
+        for (const [start, end] of model.charging) {
+            const area = element('rect', {x: x(start), y: top, width: Math.max(0, x(end) - x(start)), height: h, class: 'chart-charging-area'});
+            const title = document.createElementNS(NS, 'title');
+            title.textContent = `На зарядке: ${fullTime(start)} — ${fullTime(end)}`;
+            area.appendChild(title);
         }
         for (let i = 0; i <= 4; i++) {
             const value = min + (max - min) * i / 4;
@@ -150,6 +157,7 @@
                 element('path', {d: path, class: 'chart-pulse-line'});
             }
         }
+        if (!data.points.length) element('text', {x: width / 2, y: height / 2, 'text-anchor': 'middle', class: 'chart-empty'}, 'За этот период замеров нет');
         element('line', {id: 'chart-cursor', y1: top, y2: top + h, class: 'chart-cursor', visibility: 'hidden'});
         element('circle', {id: 'chart-selection', r: 5, class: 'chart-selection', visibility: 'hidden'});
         if (selection >= 0 && selection < data.points.length) select(selection, false);

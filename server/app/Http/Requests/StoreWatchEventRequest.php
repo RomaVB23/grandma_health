@@ -25,6 +25,8 @@ class StoreWatchEventRequest extends FormRequest
             'measured_at_ms' => ['present', 'nullable', 'integer', 'min:1'],
             'battery_percent' => ['present', 'nullable', 'integer', 'between:0,100'],
             'charging' => ['required', 'boolean'],
+            'charging_since_ms' => ['sometimes', 'nullable', 'integer', 'min:1'],
+            'live_heartbeat' => ['sometimes', 'boolean'],
             'monitoring_status' => ['required', Rule::in([
                 'active', 'starting', 'stopped', 'permission_lost', 'unsupported', 'error', 'unknown',
             ])],
@@ -47,6 +49,10 @@ class StoreWatchEventRequest extends FormRequest
                     || ($since !== null && (int) $since > (int) $this->input('watch_sent_at_ms'))) {
                     $validator->errors()->add('wearing_since_ms', 'Wearing state and its timestamp must agree.');
                 }
+            }
+            if ($this->input('charging_since_ms') !== null &&
+                (int) $this->input('charging_since_ms') > (int) $this->input('watch_sent_at_ms')) {
+                $validator->errors()->add('charging_since_ms', 'Charging transition is ahead of the watch snapshot.');
             }
 
             $now = (int) floor(microtime(true) * 1000);
@@ -95,6 +101,10 @@ class StoreWatchEventRequest extends FormRequest
             $payload['wearing_state'] = $data['wearing_state'];
             $payload['wearing_since_ms'] = isset($data['wearing_since_ms']) ? (int) $data['wearing_since_ms'] : null;
         }
+        if (array_key_exists('charging_since_ms', $data)) {
+            $payload['charging_since_ms'] = isset($data['charging_since_ms']) ? (int) $data['charging_since_ms'] : null;
+        }
+        if (array_key_exists('live_heartbeat', $data)) $payload['live_heartbeat'] = (bool) $data['live_heartbeat'];
         return $payload;
     }
 }

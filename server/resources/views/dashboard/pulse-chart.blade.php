@@ -12,7 +12,8 @@
         <svg id="chart-svg" role="img" aria-label="График уникальных замеров пульса"></svg>
         <div id="chart-tooltip" class="chart-tooltip" hidden></div>
     </div>
-    <div class="chart-legend"><span><i class="legend-pulse"></i>Измеренный пульс</span><span><i class="legend-gap"></i>Длительная пауза без замеров</span><span id="chart-thresholds"></span></div>
+    <div class="chart-legend"><span><i class="legend-pulse"></i>Измеренный пульс</span><span><i class="legend-gap"></i>Пауза без замеров</span><span><i class="legend-charging"></i>Часы на зарядке</span><span id="chart-thresholds"></span></div>
+    <p class="small muted chart-note">Оранжевым отмечена зарядка по сообщениям часов; серым — остальные длительные паузы. Если время подключения неизвестно, границы зарядки приблизительные.</p>
     <p class="small muted chart-note">Линия соединяет отдельные замеры, а не непрерывное измерение. Разрывы относятся к отсутствию замеров пульса, а не обязательно к потере связи. Пунктир показывает границы действующего профиля на момент загрузки графика; он не восстанавливает прежние пороги и тревоги. Наведите на график или используйте стрелки клавиатуры.</p>
     @include('dashboard.period-report')
     <noscript><p class="notice">Для графика включите JavaScript. Таблица замеров доступна ниже.</p></noscript>

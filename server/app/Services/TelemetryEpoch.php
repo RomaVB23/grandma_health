@@ -47,7 +47,7 @@ class TelemetryEpoch
             // Advance incident generations so old delivered warnings cannot create
             // a spurious recovery or collide with the next incident's event key.
             DB::table('telegram_alerts')->update(['active' => false, 'generation' => DB::raw('generation + 1')]);
-            DB::table('telegram_outbox')->where('state', 'pending')->whereIn('purpose', ['alert', 'status'])
+            DB::table('telegram_outbox')->where('state', 'pending')->whereIn('purpose', ['alert', 'status', 'charging'])
                 ->update(['state' => 'cancelled']);
             DB::table('telegram_state')->updateOrInsert(['key' => 'alerts_started_at'], ['value' => (string) $now]);
             return ['count' => $count, 'cleared_at_ms' => $boundary];

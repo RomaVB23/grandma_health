@@ -21,6 +21,11 @@ class WatchStatus
         $phone = DB::table('phone_status')->where('device_id', $device)->first();
         $pulseAge = $pulse ? max(0, $now - $pulse->measured_at_ms) : null;
         $contactAge = $contact ? max(0, $now - $contact->received_at_ms) : null;
+        // A power DataItem can arrive before its live heartbeat. Use the newest
+        // fresh snapshot for charger state, but never let it establish live contact.
+        $chargingKnown = $contactAge !== null && $contactAge < config('telemetry.contact_timeout_ms') && $snapshot
+            && $snapshot->watch_sent_at_ms <= $now + config('telemetry.clock_tolerance_ms')
+            && $now - $snapshot->watch_sent_at_ms < config('telemetry.contact_timeout_ms');
 
         $s = [
             'device_id' => $device,
@@ -36,8 +41,11 @@ class WatchStatus
             'measurement_stale' => $pulseAge === null || $pulseAge >= config('telemetry.measurement_stale_ms'),
             'battery_percent' => $snapshot?->battery_percent,
             'charging' => $snapshot ? (bool) $snapshot->charging : null,
+            'charging_state' => $chargingKnown ? ((bool) $snapshot->charging ? 'charging' : 'not_charging') : 'unknown',
+            'charging_since_ms' => $snapshot?->charging_since_ms,
+            'charging_reported_at_ms' => $snapshot?->watch_sent_at_ms,
             'snapshot_at_ms' => $snapshot?->watch_sent_at_ms,
-            'monitoring_status' => $heartbeat?->monitoring_status ?? 'unknown',
+            'monitoring_status' => $wearing?->monitoring_status ?? $heartbeat?->monitoring_status ?? 'unknown',
             'wearing_state' => $contactAge !== null && $contactAge < config('telemetry.contact_timeout_ms')
                 ? ($wearing?->wearing_state ?? 'unknown') : 'unknown',
             'last_known_wearing_state' => $wearing?->wearing_state ?? 'unknown',

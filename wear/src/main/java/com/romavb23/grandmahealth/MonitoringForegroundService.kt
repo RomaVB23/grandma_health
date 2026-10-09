@@ -37,7 +37,8 @@ class MonitoringForegroundService : Service() {
     private val automaticMeasurement by lazy {
         AutomaticMeasurementTrigger(
             attempt = { reason ->
-                if (started && WatchStateStore.isEnabled(this) && hasPermissions(this)) {
+                if (started && WatchStateStore.isEnabled(this) && hasPermissions(this)
+                    && !WatchChargingTracker.snapshot(this).charging) {
                     spotMeasurement.requestAutomatic(reason)
                 } else null
             },
@@ -49,6 +50,19 @@ class MonitoringForegroundService : Service() {
             },
         )
     }
+    private val chargingTracker by lazy { WatchChargingTracker(this) { charging ->
+        if (started) {
+            if (charging.charging) {
+                automaticMeasurement.cancelPending()
+                spotMeasurement.cancel()
+            }
+            sendChargingHistory(this, charging)
+            sendWatchHeartbeat(this)
+            if (!charging.charging && WatchStateStore.wearing(this).first == "on") {
+                automaticMeasurement.trigger("unplugged")
+            }
+        }
+    } }
     private val wearingSensor by lazy { WearingSensor(this) {
         if (started) {
             spotMeasurement.onWearingChanged()
@@ -118,6 +132,7 @@ class MonitoringForegroundService : Service() {
             automaticMeasurement.cancelPending()
             spotMeasurement.cancel()
             wearingSensor.stop()
+            chargingTracker.stop()
             WatchStateStore.setEnabled(this, false)
             WatchStateStore.setStatus(this, "stopped")
             sendWatchHeartbeat(this)
@@ -146,6 +161,7 @@ class MonitoringForegroundService : Service() {
             activeService = this
             WatchStateStore.preferences(this).edit()
                 .putLong("last_service_started_at", System.currentTimeMillis()).apply()
+            chargingTracker.start()
             wearingSensor.start()
             WatchStateStore.setStatus(this, "starting")
             val powerManager = getSystemService(PowerManager::class.java)
@@ -205,6 +221,7 @@ class MonitoringForegroundService : Service() {
         automaticMeasurement.cancelPending()
         spotMeasurement.cancel()
         wearingSensor.stop()
+        chargingTracker.stop()
         WatchStateStore.setEnabled(this, false)
         WatchStateStore.setStatus(this, status)
         sendWatchHeartbeat(this)
@@ -256,6 +273,7 @@ class MonitoringForegroundService : Service() {
         if (activeService === this) activeService = null
         started = false
         wearingSensor.stop()
+        chargingTracker.stop()
         handler.removeCallbacks(heartbeat)
         wakeLock?.let { if (it.isHeld) it.release() }
         if (WatchStateStore.status(this) in setOf("active", "starting")) {

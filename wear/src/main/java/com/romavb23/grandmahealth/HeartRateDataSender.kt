@@ -19,7 +19,7 @@ internal fun sendHeartRateToPhone(
             ?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
             ?.takeIf { it in 0..100 }
             ?: -1
-    val charging = batteryManager?.isCharging == true
+    val charging = WatchChargingTracker.snapshot(context)
 
     val request =
         PutDataMapRequest.create(HEART_RATE_PATH).run {
@@ -27,7 +27,8 @@ internal fun sendHeartRateToPhone(
             dataMap.putLong(HEART_RATE_KEY_MEASURED_AT, measuredAt)
             dataMap.putLong("sent_at", System.currentTimeMillis())
             dataMap.putInt(HEART_RATE_KEY_BATTERY_PERCENT, batteryPercent)
-            dataMap.putBoolean(HEART_RATE_KEY_CHARGING, charging)
+            dataMap.putBoolean(HEART_RATE_KEY_CHARGING, charging.charging)
+            if (charging.since > 0L) dataMap.putLong("charging_since_ms", charging.since)
             val (wearing, since) = WatchStateStore.wearing(context)
             dataMap.putString("wearing_state", wearing)
             dataMap.putLong("wearing_since_ms", since)
@@ -61,21 +62,34 @@ internal fun sendWatchHeartbeat(context: Context) {
 }
 
 /** Reuse exactly the same battery, wearing and contact fields for live spot results. */
-internal fun watchSnapshot(context: Context): DataMap {
+internal fun watchSnapshot(context: Context, chargingState: WatchChargingTracker.State? = null): DataMap {
     val app = context.applicationContext
     val battery = app.getSystemService(BatteryManager::class.java)
     val (bpm, measuredAt) = WatchStateStore.heartRate(app)
+    val charging = chargingState ?: WatchChargingTracker.snapshot(app)
     return DataMap().apply {
         putLong("sent_at", System.currentTimeMillis())
         putInt("bpm", bpm)
         putLong("measured_at", measuredAt)
         putInt("battery_percent", battery?.getIntProperty(BatteryManager.BATTERY_PROPERTY_CAPACITY)
             ?.takeIf { it in 0..100 } ?: -1)
-        putBoolean("charging", battery?.isCharging == true)
+        putBoolean("charging", charging.charging)
+        if (charging.since > 0L) putLong("charging_since_ms", charging.since)
         putString("monitoring_status", WatchStateStore.status(app))
         val (wearing, since) = WatchStateStore.wearing(app)
         putString("wearing_state", wearing)
         putLong("wearing_since_ms", since)
+    }
+}
+
+/** Each transition has its own DataItem, so both ends survive an offline phone. */
+internal fun sendChargingHistory(context: Context, state: WatchChargingTracker.State) {
+    val snapshot = watchSnapshot(context, state)
+    val request = PutDataMapRequest.create("/watch/charging/${snapshot.getLong("sent_at")}").apply {
+        dataMap.putAll(snapshot)
+    }.asPutDataRequest().setUrgent()
+    Wearable.getDataClient(context).putDataItem(request).addOnFailureListener { error ->
+        Log.e("GrandmaCharging", "Cannot persist charging transition", error)
     }
 }
 
