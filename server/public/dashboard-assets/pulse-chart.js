@@ -241,7 +241,7 @@
     setInterval(() => {
         if (document.getElementById('auto-refresh')?.checked && !document.hidden && !draft
             && !form.contains(document.activeElement) && document.activeElement !== plot) load();
-    }, 60_000);
+    }, 10_000);
     document.addEventListener('grandma-measurement-completed', () => { if (!draft) load(); });
     showCustom(); load();
 })();

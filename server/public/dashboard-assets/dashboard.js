@@ -15,7 +15,7 @@
             && !document.querySelector('details[open]') && !document.activeElement?.matches('.filters input, .filters select')) {
             window.location.reload();
         }
-    }, 60_000);
+    }, 10_000);
 })();
 
 // This button starts a command; ordinary refresh never turns the sensor on.

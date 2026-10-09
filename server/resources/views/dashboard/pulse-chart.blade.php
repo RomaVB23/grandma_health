@@ -1,7 +1,7 @@
 <section class="panel chart-panel" id="pulse-chart" data-endpoint="{{ route('dashboard.pulse-chart') }}">
     <div class="history-heading"><div><h2>Пульс во времени</h2><p class="muted">Уникальные замеры по времени измерения. Период графика выбирается отдельно от таблицы.</p></div><span class="count-label" id="chart-count">Загрузка…</span></div>
     <form class="chart-controls" id="chart-form">
-        <label>Период<select id="chart-period" name="period"><option value="1h">Последний час</option><option value="6h">Последние 6 часов</option><option value="24h" selected>Последние сутки</option><option value="custom">Свой период (до 31 дня)</option></select></label>
+        <label>Период<select id="chart-period" name="period"><option value="1h">Последний час</option><option value="6h">Последние 6 часов</option><option value="12h">Последние 12 часов</option><option value="24h" selected>Последние сутки</option><option value="custom">Свой период (до 31 дня)</option></select></label>
         <label id="chart-from-label" hidden>Начало<input type="datetime-local" id="chart-from" name="from"></label>
         <label id="chart-to-label" hidden>Окончание<input type="datetime-local" id="chart-to" name="to"></label>
         <label>Разрыв при паузе<select id="chart-gap" name="gap_minutes"><option value="5">Больше 5 минут</option><option value="10" selected>Больше 10 минут</option><option value="15">Больше 15 минут</option><option value="30">Больше 30 минут</option></select></label>

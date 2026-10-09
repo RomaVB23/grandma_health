@@ -215,6 +215,17 @@ class DashboardTest extends TestCase
         }
     }
 
+    public function test_chart_supports_a_twelve_hour_period(): void
+    {
+        $now = now()->getTimestampMs();
+        $this->event(['measured_at_ms' => $now - 12 * 3_600_000 - 1, 'bpm' => 55]);
+        $this->event(['measured_at_ms' => $now - 11 * 3_600_000, 'bpm' => 76]);
+        $this->signedIn()->getJson('/dashboard/pulse-chart?period=12h')->assertOk()
+            ->assertJsonPath('from_ms', $now - 12 * 3_600_000)->assertJsonPath('to_ms', $now)
+            ->assertJsonPath('report.pulse.count', 1)->assertJsonPath('points.0.1', 76);
+        $this->get('/dashboard')->assertOk()->assertSee('Последние 12 часов');
+    }
+
     public function test_date_filters_use_minsk_midnight_and_inclusive_end_date(): void
     {
         $start = Carbon::parse('2026-10-05T21:00:00Z')->getTimestampMs();

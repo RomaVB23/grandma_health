@@ -46,6 +46,10 @@ class BotDelivery
                     }
                 }
             }
+            if ($message->purpose === 'chart_scheduled') {
+                $allowed = $allowed && $member?->alerts_allowed && $member?->notifications_enabled
+                    && config('telegram.charts_enabled');
+            }
             if (!$allowed) {
                 DB::table('telegram_outbox')->where('id', $message->id)->update(['state' => 'cancelled']);
                 continue;
@@ -62,7 +66,11 @@ class BotDelivery
                 'link_preview_options' => ['is_disabled' => true]];
             if ($message->markup !== null) { $payload['reply_markup'] = json_decode($message->markup, true, flags: JSON_THROW_ON_ERROR); }
             try {
-                $this->api->call('sendMessage', $payload);
+                if (in_array($message->purpose, ['chart', 'chart_scheduled'], true)) {
+                    app(ChartReports::class)->send($message, $this->api);
+                } else {
+                    $this->api->call('sendMessage', $payload);
+                }
                 DB::table('telegram_outbox')->where('id', $message->id)->update(['state' => 'sent', 'sent_at_ms' => BotStore::now()]);
             } catch (TelegramApiException $error) {
                 if ($error->apiCode === 401) { throw $error; }
@@ -77,6 +85,14 @@ class BotDelivery
                     'available_at_ms' => BotStore::now() + $delay * 1000,
                 ]);
                 if ($error->apiCode === 429) { return; }
+            } catch (\Throwable $error) {
+                if (!in_array($message->purpose, ['chart', 'chart_scheduled'], true)) throw $error;
+                // A bad renderer/report must not hold up pulse and connection alerts.
+                Log::warning('Telegram chart could not be generated');
+                DB::table('telegram_outbox')->where('id', $message->id)->update(['state' => 'failed']);
+                if ($message->purpose === 'chart') {
+                    app(BotStore::class)->enqueue($message->user_id, 'Не удалось сформировать график. Попробуйте позже.');
+                }
             }
         }
     }

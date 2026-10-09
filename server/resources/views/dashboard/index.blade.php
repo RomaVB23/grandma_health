@@ -6,7 +6,7 @@
 @section('content')
 <section class="page-heading">
     <div><p class="eyebrow">Данные с часов</p><h1>История измерений</h1><p class="muted">Показания во времени, а не только последнее значение.</p></div>
-    <div class="refresh-controls"><div class="toolbar-buttons"><a class="button" href="{{ request()->fullUrl() }}">↻ Обновить</a><a class="button" href="{{ route('dashboard.monitoring') }}">Настройки контроля</a><a class="button danger-subtle" href="{{ route('dashboard.clear') }}">Очистить историю</a></div><label class="check-label"><input id="auto-refresh" type="checkbox"> Каждую минуту</label></div>
+    <div class="refresh-controls"><div class="toolbar-buttons"><a class="button" href="{{ request()->fullUrl() }}">↻ Обновить</a><a class="button" href="{{ route('dashboard.monitoring') }}">Настройки контроля</a><a class="button danger-subtle" href="{{ route('dashboard.clear') }}">Очистить историю</a></div><label class="check-label"><input id="auto-refresh" type="checkbox"> Каждые 10 секунд</label></div>
 </section>
 @if (session('history_cleared'))
 <div class="notice success" role="status">История очищена: удалено {{ session('history_cleared.count') }} пакетов. Новый период начат {{ $text->time(session('history_cleared.cleared_at_ms')) }}. Новые данные будут появляться автоматически.</div>

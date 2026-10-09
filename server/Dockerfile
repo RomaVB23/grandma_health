@@ -2,7 +2,10 @@ FROM dunglas/frankenphp:1-php8.4-bookworm
 
 ENV COMPOSER_ALLOW_SUPERUSER=1
 
-RUN install-php-extensions pdo_sqlite mbstring intl zip pcntl
+RUN install-php-extensions pdo_sqlite mbstring intl zip pcntl gd \
+    && apt-get update \
+    && apt-get install -y --no-install-recommends fonts-dejavu-core \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=composer:2 /usr/bin/composer /usr/local/bin/composer
 WORKDIR /app
 COPY . .

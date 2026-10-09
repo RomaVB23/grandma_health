@@ -53,6 +53,7 @@ class TelegramRun extends Command
                     $store->put('worker_tick_at', (string) BotStore::now());
                     $alerts->tick();
                     app(\App\Services\MeasurementRequests::class)->notify();
+                    app(\App\Services\Telegram\ChartReports::class)->tick();
                     $delivery->flush();
                     if (!$running) { break; }
                     $pending = \Illuminate\Support\Facades\DB::table('telegram_outbox')->where('state', 'pending')

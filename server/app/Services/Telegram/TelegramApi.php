@@ -15,6 +15,23 @@ class TelegramApi
         } catch (Throwable) {
             throw new TelegramApiException(0);
         }
+        return $this->result($response);
+    }
+
+    public function photo(array $payload, string $png): mixed
+    {
+        try {
+            $response = Http::connectTimeout(5)->timeout(30)->withoutRedirecting()
+                ->attach('photo', $png, 'pulse.png', ['Content-Type' => 'image/png'])
+                ->post('https://api.telegram.org/bot'.config('telegram.token').'/sendPhoto', $payload);
+        } catch (Throwable) {
+            throw new TelegramApiException(0);
+        }
+        return $this->result($response);
+    }
+
+    private function result(\Illuminate\Http\Client\Response $response): mixed
+    {
         $data = $response->json();
         if (!$response->successful() || !is_array($data) || ($data['ok'] ?? false) !== true) {
             $code = (int) ($data['error_code'] ?? $response->status());
